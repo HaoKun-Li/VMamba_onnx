@@ -1,6 +1,6 @@
 ### Export to ONNX
 
-Please Try to see the bash in run.sh, this prokect is still developing.
+Please try to see the bash in [run.sh](run.sh) this project is still developing.
 
 The following Readme.md is clone from previous https://github.com/MzeroMiko/VMamba
 
