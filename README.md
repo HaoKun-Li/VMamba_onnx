@@ -9,7 +9,7 @@ I use vssm_tiny_0230_ckpt_epoch_262.pth as baseline model.
 | :---: | :---: | :---: | :---: | :---: | :---: |:---: |
 | Oiginal PyTorch with Trion and Cuda | Nvidia-A100-40G | 1 | 48.8317 | 0.0205 | 82.490 | -- |
 | Pure PyTorch | Nvidia-A100-40G | 1 | 0.7058 | 1.4168 | 82.490 | -- |
-| Onnx | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3399 | 0.2667 |	3.7491 | 70386 |
+| Onnx | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 0.2667 | 3.7491 |	82.490 | 70386 |
 | Onnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3399 | 0.7463 | 82.400 | 24707 |
 | SimplifyOnnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3250 | 0.7547 | 82.400 | 12853 |
 | Onnx+chunk24| Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 1.6838 | 0.5939 | 82.400 | 24707 |
