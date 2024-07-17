@@ -1,10 +1,25 @@
 ### Export to ONNX
 
-Please try to see the bash in [run.sh](run.sh) this project is still developing.
+Please try to see the bash in [run.sh](run.sh). Nota that this project is still developing and welcome everyone to discuss together.
 
 The following Readme.md is clone from previous https://github.com/MzeroMiko/VMamba
 
+### **Image Classification on ImageNet with VMamba**
 
+Note that I use vssm_tiny_0230_ckpt_epoch_262.pth as baseline model
+
+| Model | Hardware|  batchsize | Image/Second | Second/Image | Top1 Acc(%) | Onnx Cells | 
+| :---: | :---: | :---: | :---: | :---: | :---: |:---: |
+| Oiginal PyTorch with Trion and Cuda | Nvidia-A100-40G | 1 | 48.8317 | 0.0205 | 82.490 | -- |
+| Pure PyTorch | Nvidia-A100-40G | 1 | 0.7058 | 1.4168 | 82.490 | -- |
+| Onnx+chunk24+noEinsum+intShape+noInplace
+ | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3399 | 0.7463 | 82.400 | 24707 |
+| SimplifyOnnx+chunk24+noEinsum+intShape+noInplace
+ | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3250 | 0.7547 | 82.400 | 12853 |
+| Onnx+chunk24+noEinsum+intShape+noInplace
+ | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 1.6838 | 0.5939 | 82.400 | 24707 |
+| SimplifyOnnx+chunk24+noEinsum+intShape+noInplace
+ | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 1.6757 | 0.5968 | 82.400 | 12853 |
 
 <div align="center">
 <h1>VMamba </h1>
