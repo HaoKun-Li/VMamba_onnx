@@ -2,7 +2,7 @@
 
 Please try to see the bash in [run.sh](run.sh). 
 This project is still developing and welcome everyone to discuss together.
-I use [vssm_tiny_0230_ckpt_epoch_262.pth](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230.txt)/[ckpt](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230_ckpt_epoch_262.pth) as baseline model.
+I use [vssm_tiny_0230_ckpt_epoch_262.pth](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230_ckpt_epoch_262.pth) as baseline model.
 
 ### **Image Classification on ImageNet with VMamba**
 | Model | Hardware|  batchsize | Image/Second | Second/Image | Top1 Acc(%) | Onnx Cells | 
