@@ -2,7 +2,7 @@
 
 Please try to see the bash in [run.sh](run.sh). 
 This project is still developing and welcome everyone to discuss together.
-I use vssm_tiny_0230_ckpt_epoch_262.pth as baseline model.
+I use [vssm_tiny_0230_ckpt_epoch_262.pth](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230.txt)/[ckpt](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230_ckpt_epoch_262.pth) as baseline model.
 
 ### **Image Classification on ImageNet with VMamba**
 | Model | Hardware|  batchsize | Image/Second | Second/Image | Top1 Acc(%) | Onnx Cells | 
@@ -14,6 +14,8 @@ I use vssm_tiny_0230_ckpt_epoch_262.pth as baseline model.
 | SimplifyOnnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3250 | 0.7547 | 82.400 | 12853 |
 | Onnx+chunk24| Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 1.6838 | 0.5939 | 82.400 | 24707 |
 | SimplifyOnnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 1.6757 | 0.5968 | 82.400 | 12853 |
+| Onnx+chunk24+chunkCumsum| Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 2.1616 | 0.4626 | 82.400 | 50408 |
+| SimplifyOnnx+chunk24+chunkCumsum | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 2.1677 | 0.4613 | 82.400 | 24388 |
 
 
 The following Readme.md is clone from previous https://github.com/MzeroMiko/VMamba

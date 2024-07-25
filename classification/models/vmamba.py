@@ -96,8 +96,25 @@ def selective_scan_easy(us, dts, As, Bs, Cs, Ds, delta_bias=None, delta_softplus
         Ds: (G, D)
         hprefix: (B, G, D, N)
         """
-        ts = dts.cumsum(dim=0)
         chunk_L = int(us.shape[0])
+
+        # # # original code
+        # ts = dts.cumsum(dim=0) # (L, B, G, D)
+
+        # ### calculate ts with small chunk cumsum, modify by lihaokun at 20240723
+        cumsum_chunk_size = 6   #  cumsum_chunk_size*D < 6*1536 for speedup in bmodel
+        cumsum_chunks =[]
+        cumsum_chunk_number = math.ceil(chunk_L/6)
+        for i in range(cumsum_chunk_number):
+            start = i * cumsum_chunk_size 
+            end = (i + 1) * cumsum_chunk_size if i<cumsum_chunk_number else chunk_L
+            x_chunk = dts[start:end]
+            if i == 0:
+                cumsum_chunk = torch.cumsum(x_chunk, dim=0)
+            else:
+                cumsum_chunk = torch.cumsum(x_chunk, dim=0) + cumsum_chunks[-1][-1]
+            cumsum_chunks.append(cumsum_chunk)
+        ts = torch.cat(cumsum_chunks, dim=0)
 
         # # # original code
         # Ats = torch.einsum("gdn,lbgd->lbgdn", As, ts).exp()
@@ -166,10 +183,40 @@ def selective_scan_easy(us, dts, As, Bs, Cs, Ds, delta_bias=None, delta_softplus
 
         # modify by lihaokun at 20240711
         # sometimes rAts will be zero, so we add a minimal value to avoid divide zero
-        # hs_tmp = rAts * (dtBus / (rAts + torch.finfo(torch.float32).tiny)).cumsum(dim=0) 
-        hs_tmp = rAts * (dtBus / (rAts + 1e-30)).cumsum(dim=0) 
+        # hs_tmp = rAts * (dtBus / (rAts + torch.finfo(torch.float32).tiny)).cumsum(dim=0)
 
-        hs = hs_tmp + Ats * hprefix.unsqueeze(0)
+        # big cumsum version
+        # hs_tmp = rAts * (dtBus / (rAts + 1e-30)).cumsum(dim=0) 
+
+        # todo
+        # ### calculate ts with small chunk cumsum, modify by lihaokun at 20240723
+        # cumsum_chunk_size = 6   #  cumsum_chunk_size*D < 6*1536 for speedup in bmodel
+
+        #convert 5 dim to 4 dim when N==1
+        if N==1:
+            dtBus = dtBus.squeeze(4)
+            rAts = rAts.squeeze(4)
+
+        dtBus_divide_rAts = (dtBus / (rAts + 1e-30))
+        cumsum_chunks =[]
+        cumsum_chunk_number = math.ceil(chunk_L/6)
+
+        for i in range(cumsum_chunk_number):
+            start = i * cumsum_chunk_size 
+            end = (i + 1) * cumsum_chunk_size if i<cumsum_chunk_number else chunk_L
+            x_chunk = dtBus_divide_rAts[start:end]
+            if i == 0:
+                cumsum_chunk = torch.cumsum(x_chunk, dim=0)
+            else:
+                cumsum_chunk = torch.cumsum(x_chunk, dim=0) + cumsum_chunks[-1][-1]
+            cumsum_chunks.append(cumsum_chunk)
+        dtBus_cumsum = torch.cat(cumsum_chunks, dim=0)
+        hs_tmp = rAts * dtBus_cumsum
+
+        if N==1:
+            hs = hs_tmp.unsqueeze(4) + Ats * hprefix.unsqueeze(0)
+        else:
+            hs = hs_tmp + Ats * hprefix.unsqueeze(0)
 
 
         # ### debug
