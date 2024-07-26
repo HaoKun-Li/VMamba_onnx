@@ -1,14 +1,14 @@
-### Export to ONNX
+## Export to ONNX
 
-Please try to see the bash in [run.sh](run.sh). 
-This project is still developing and welcome everyone to discuss together.
-I use [vssm_tiny_0230_ckpt_epoch_262.pth](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230_ckpt_epoch_262.pth) as baseline model.
+* Please try to see the bash in [run.sh](run.sh). 
 
-The chunk24 technology is modified from [mamba-mini](https://github.com/MzeroMiko/mamba-mini). It is an efficient implementation of selective scan in one file, works with both cpu and gpu, with corresponding mathematical derivation. It is probably the code which is the most close to selective_scan_cuda in mamba.
+* This project is still developing and welcome everyone to discuss together. I use [vssm_tiny_0230_ckpt_epoch_262.pth](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230_ckpt_epoch_262.pth) as baseline model.
 
-The chunkCumsum technology is modified according to the requirement from BITMAIN. THis modification makes sure that the input of cumsum operations can be moved to TPU memory in one time. In this way, the cumsum operation can use the LayerGroup optimization strategy to speedup the model. 
+* The chunk24 technology is modified from [mamba-mini](https://github.com/MzeroMiko/mamba-mini). It is an efficient implementation of selective scan in one file, works with both cpu and gpu, with corresponding mathematical derivation. It is probably the code which is the most close to selective_scan_cuda in mamba.
 
-### **Image Classification on ImageNet with VMamba**
+* The chunkCumsum technology is modified according to the requirement from BITMAIN. THis modification makes sure that the input of cumsum operations can be moved to TPU memory in one time. In this way, the cumsum operation can use the LayerGroup optimization strategy to speedup the model. 
+
+## Image Classification on ImageNet with VMamba
 | Model | Hardware|  batchsize | Image/Second | Second/Image | Top1 Acc(%) | Onnx Cells | 
 | :---: | :---: | :---: | :---: | :---: | :---: |:---: |
 | Oiginal PyTorch with Trion and Cuda | Nvidia-A100-40G | 1 | 48.8317 | 0.0205 | 82.490 | -- |
@@ -24,7 +24,7 @@ The chunkCumsum technology is modified according to the requirement from BITMAIN
 | SimplifyOnnx+chunk24+chunkCumsum | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 |  2.7084 | 0.3692 | 82.400 | 24388 |
 
 
-The following Readme.md is clone from previous https://github.com/MzeroMiko/VMamba
+* The following Readme.md is clone from previous https://github.com/MzeroMiko/VMamba
 
 <div align="center">
 <h1>VMamba </h1>
