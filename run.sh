@@ -43,7 +43,6 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 # batchsize为1，chunk并行版，无einsum，shape截断，替换inplace操作，避免分母为0，使用分块计算的cunsum算子,导出onnx模型，使用onnxoptimizer简化vmamba onnx模型
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_0723.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_0723.onnx" --simplify_onnx 
 
-# running
 # batchsize为16，chunk并行版，无einsum，shape截断，替换inplace操作，避免分母为0，使用分块计算的cunsum算子,导出onnx模型，使用onnxoptimizer简化vmamba onnx模型
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 16 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --simplify_onnx 
 
@@ -94,6 +93,8 @@ CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.launch --nnodes=1 --node_rank
 # Acc@1 82.400 Acc@5 95.908
 CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29504 inference_lhk.py --batch-size 16 --onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_batchsize16_0715.onnx" --eval_onnx 2>&1 | tee eval_onnx_log20240716.txt
 
+# Acc@1 82.400 Acc@5 95.908
+CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29504 inference_lhk.py --batch-size 16 --onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --eval_onnx 
 
 
 ########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度
@@ -161,6 +162,11 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 # onnxoptimizer简化onnx模型	 Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz	1	         2.1677         0.4613
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --batch-size 1 --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_0723.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_0723.onnx" --inference_time_onnx --inference_time_simply_onnx
 
+########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度
+# 模型	                       主要推理设备	                        批量大小	   Image/Second     Second/Image
+# onnx模型	                Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz  16	        2.7462	        0.3641
+# onnxoptimizer简化onnx模型	 Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz	16	         2.7084         0.3692
+CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --batch-size 16 --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --inference_time_onnx --inference_time_simply_onnx
 
 
 

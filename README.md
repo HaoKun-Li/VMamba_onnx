@@ -16,10 +16,12 @@ The chunkCumsum technology is modified according to the requirement from BITMAIN
 | Onnx | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 0.2667 | 3.7491 |	82.490 | 70386 |
 | Onnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3399 | 0.7463 | 82.400 | 24707 |
 | SimplifyOnnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3250 | 0.7547 | 82.400 | 12853 |
-| Onnx+chunk24| Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 1.6838 | 0.5939 | 82.400 | 24707 |
-| SimplifyOnnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 1.6757 | 0.5968 | 82.400 | 12853 |
+| Onnx+chunk24| Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 2.2994 | 0.4349 | 82.400 | 24707 |
+| SimplifyOnnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 2.3013 | 0.4345 | 82.400 | 12853 |
 | Onnx+chunk24+chunkCumsum| Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 2.1616 | 0.4626 | 82.400 | 50408 |
 | SimplifyOnnx+chunk24+chunkCumsum | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 2.1677 | 0.4613 | 82.400 | 24388 |
+| Onnx+chunk24+chunkCumsum| Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 | 2.7462 | 0.3641 | 82.400 | 50408 |
+| SimplifyOnnx+chunk24+chunkCumsum | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 |  2.7084 | 0.3692 | 82.400 | 24388 |
 
 
 The following Readme.md is clone from previous https://github.com/MzeroMiko/VMamba
