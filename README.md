@@ -2,7 +2,8 @@
 
 * Please try to see the bash in [run.sh](run.sh). 
 
-* This project is still developing and welcome everyone to discuss together. I use [vssm_tiny_0230_ckpt_epoch_262.pth](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230_ckpt_epoch_262.pth) as baseline model.
+* This project is still developing and welcome everyone to discuss together. 
+* We use [vssm_tiny_0230_ckpt_epoch_262.pth](https://github.com/MzeroMiko/VMamba/releases/download/%2320240316/vssm_tiny_0230_ckpt_epoch_262.pth) as baseline model.
 
 * The chunk24 technology is modified from [mamba-mini](https://github.com/MzeroMiko/mamba-mini). It is an efficient implementation of selective scan in one file, works with both cpu and gpu, with corresponding mathematical derivation. It is probably the code which is the most close to selective_scan_cuda in mamba.
 
@@ -24,7 +25,8 @@
 | SimplifyOnnx+chunk24+chunkCumsum | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 16 |  2.7084 | 0.3692 | 82.400 | 24388 |
 
 
-* The following Readme.md is clone from previous https://github.com/MzeroMiko/VMamba
+* The majority code and following Readme is clone from previous https://github.com/MzeroMiko/VMamba at May 21, 2024.
+* We will support new version of VMamba soon.
 
 <div align="center">
 <h1>VMamba </h1>
