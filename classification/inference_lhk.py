@@ -297,7 +297,7 @@ def main(config, args):
 
         # warmup
         for warm_iter in range(10):
-            print("warmup processing {}".format(warm_iter))
+            # print("warmup processing {}".format(warm_iter))
             output = model(image_tensor)
 
             # assert False
@@ -310,7 +310,7 @@ def main(config, args):
             # print("save image_tensor as npz")
 
         for rep in range(repetitions):
-            print("rep processing {}".format(rep))
+            # print("rep processing {}".format(rep))
             starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
             starter.record()
             output = model(image_tensor)

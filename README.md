@@ -12,7 +12,7 @@
 ## Image Classification on ImageNet with VMamba
 | Model | Hardware|  batchsize | Image/Second | Second/Image | Top1 Acc(%) | Onnx Cells | 
 | :---: | :---: | :---: | :---: | :---: | :---: |:---: |
-| Oiginal PyTorch with Trion and Cuda | Nvidia-A100-40G | 1 | 48.8317 | 0.0205 | 82.490 | -- |
+| Oiginal PyTorch with Trion and Cuda | Nvidia-A100-40G | 1 | 78.49 | 0.0127 | 82.490 | -- |
 | Pure PyTorch | Nvidia-A100-40G | 1 | 0.7058 | 1.4168 | 82.490 | -- |
 | Onnx | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 0.2667 | 3.7491 |	82.490 | 70386 |
 | Onnx+chunk24 | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | 1 | 1.3399 | 0.7463 | 82.400 | 24707 |

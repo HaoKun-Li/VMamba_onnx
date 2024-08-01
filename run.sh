@@ -69,6 +69,8 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 # 使用pytorch版的selective_scan_ref, CrossScan, CrossMerge
 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval
 
+python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --pretrained /home/test/code/VMamba-main/vssm1_tiny_0230s_ckpt_epoch_264.pth
+
 
 # 测试onnx模型在imagenet数据集上的准确率
 # 测试集共50000张数据，跑了20000数据时，Acc@1约为86%，属于正常情况
@@ -97,9 +99,12 @@ CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29504 inference_lhk.py --batch-size 16 --onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --eval_onnx 
 
 
-########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度
+########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度(FP32)
 # 模型	                       主要推理设备	                        批量大小	   Image/Second     Second/Image
-# 原PyTorch模型  	         Nvidia-A100-40G	                        1 	        48.8317	       0.0205
+# 原PyTorch模型  	         Nvidia-A100-40G	                        1 	        78.4899	       0.0127
+# 原PyTorch模型  	         Nvidia-A100-40G	                        16 	        911.2843       0.0011
+# 原PyTorch模型  	         Nvidia-A100-40G	                        32 	        976.6180       0.0010
+# 原PyTorch模型  	         Nvidia-A100-40G	                        64 	        1016.9207       0.0010
 # 替换特殊算子为PyTorch算子	  Nvidia-A100-40G	                         1	         0.7058	        1.4168
 # onnx模型	                Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz	1	        0.2667	       3.7491
 # onnxoptimizer简化onnx模型	 Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz	1	        0.2678	       3.7343
@@ -107,11 +112,6 @@ CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --batch-size 1 --onnx_path "model_lhk_0611.onnx" --simplify_onnx_path "model_lhk_simpliy_0611.onnx" --inference_time_pytorch --inference_time_onnx --inference_time_simply_onnx
 
 
-# Final Throughput:0.6082474172533497 image/second
-# Time for one image:1.6440678112792968 second/image
-# batch_size:  1
-# Final Throughput of onnx:1.0589019304608165 image/second
-# Time for one image of onnx:0.9443745178222659 second/image
 
 ########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度
 # 模型	                       主要推理设备	                             批量大小	   Image/Second     Second/Image
@@ -134,7 +134,10 @@ CUDA_VISIBLE_DEVICES=7 python -m torch.distributed.launch --nnodes=1 --node_rank
 
 ########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度
 # 模型	                       主要推理设备	                        批量大小	   Image/Second     Second/Image
-# 原PyTorch模型  	         Nvidia-A100-40G	                        1 	        48.8317	       0.0205
+# 原PyTorch模型  	         Nvidia-A100-40G	                        1 	        78.4899	       0.0127
+# 原PyTorch模型  	         Nvidia-A100-40G	                        16 	        911.2843       0.0011
+# 原PyTorch模型  	         Nvidia-A100-40G	                        32 	        976.6180       0.0010
+# 原PyTorch模型  	         Nvidia-A100-40G	                        64 	        1016.9207       0.0010
 # chunk版PyTorch模型  	     Nvidia-A100-40G	                         1	         6.6773	       0.1498
 # onnx模型	                Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz	1	         1.3399        0.7463
 # onnxoptimizer简化onnx模型	 Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz	1	         1.3250         0.7547
@@ -158,12 +161,14 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 
 ########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度
 # 模型	                       主要推理设备	                        批量大小	   Image/Second     Second/Image
+# PyTorch模型                 Nvidia-A100-40G	                      1             3.8032           0.2629
 # onnx模型	                Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz  1	        2.1616	        0.4626
 # onnxoptimizer简化onnx模型	 Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz	1	         2.1677         0.4613
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --batch-size 1 --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_0723.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_0723.onnx" --inference_time_onnx --inference_time_simply_onnx
 
 ########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度
 # 模型	                       主要推理设备	                        批量大小	   Image/Second     Second/Image
+# PyTorch模型                 Nvidia-A100-40G	                      16             60.9305       0.01641
 # onnx模型	                Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz  16	        2.7462	        0.3641
 # onnxoptimizer简化onnx模型	 Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz	16	         2.7084         0.3692
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --batch-size 16 --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --inference_time_onnx --inference_time_simply_onnx

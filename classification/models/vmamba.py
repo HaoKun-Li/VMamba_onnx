@@ -812,10 +812,10 @@ class SS2Dv2:
             # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=SelectiveScanOflex, no_einsum=True, CrossScan=CrossScanTriton, CrossMerge=CrossMergeTriton),  # vmambav2_tiny_224 
             
             # # modify by lihaokun
-            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_ref, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224 
+            # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_ref, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224 
 
             # modify by lihaokun  use selective_scan_chunk
-            # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224 
+            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224 
             
             # use this
             # ===============================
@@ -957,6 +957,7 @@ class SS2Dv2:
             ### modify by lihaokun
             # result = SelectiveScan(u, delta, A, B, C, D, delta_bias, delta_softplus, ssoflex)
 
+            # use this for onnx chun version 20240731
             result_chunk = selective_scan_easy(u, delta, A, B, C, D, delta_bias, delta_softplus, ssoflex, 24)
 
             # difference = result_chunk-result
