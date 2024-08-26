@@ -42,7 +42,7 @@ from PIL import Image
 import time
 
 from collections import Counter
-
+from torch.onnx import OperatorExportTypes
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),  # 调整图像大小到224x224
@@ -131,6 +131,9 @@ def parse_option():
                         help='whether to simplify_onnx onnx model')
     
     parser.add_argument('--simplify_onnx_path', type=str, default='')
+
+    parser.add_argument('--custom_operator', action='store_true',
+                        help='whether to use custom_operator for onnx')
                         
 
 
@@ -346,7 +349,8 @@ def main(config, args):
                 input_names=['input'],   # 输入张量的名称
                 output_names=['output'], # 输出张量的名称
                 dynamic_axes={'input': {0: 'batch_size'},  # 变量批次大小
-                            'output': {0: 'batch_size'}})
+                            'output': {0: 'batch_size'}},
+                operator_export_type=OperatorExportTypes.ONNX_FALLTHROUGH)
     
     if args.eval_onnx:
         dataset_train, dataset_val, data_loader_train, data_loader_val, mixup_fn = build_loader(config)

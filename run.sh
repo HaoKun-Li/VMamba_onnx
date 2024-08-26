@@ -47,6 +47,10 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 16 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --simplify_onnx 
 
 
+# batchsize为1，chunk并行版，无einsum，shape截断，替换inplace操作，避免分母为0，使用分块计算的cunsum算子,导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，使用自定义的onnx算子代替SelectiveScan
+CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0826.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0826.onnx" --simplify_onnx --custom_operator
+# to run
+
 
 
 #### 使用onnxoptimizer简化vmamba onnx模型
@@ -68,6 +72,7 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 # Acc@1 82.488 Acc@5 95.994
 # 使用pytorch版的selective_scan_ref, CrossScan, CrossMerge
 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval
+
 
 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --pretrained /home/test/code/VMamba-main/vssm1_tiny_0230s_ckpt_epoch_264.pth
 
@@ -184,7 +189,8 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 
 
 # test submodule with chunk
-CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simplify_onnx_path submodel_lhk_chunk_simplify_8_8.onnx --token_H_W 56 --chunksize 32
+CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simplify_onnx_path submodel_lhk_chunk_simplify_56_56.onnx --token_H_W 56 --chunksize 24
+
 
 加载真实数据的测试结果：
 chunksize 4    float32
@@ -369,3 +375,9 @@ python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 -
 
 # 统计onnx模型节点数量
 python calculate_op.py --onnx_path model_lhk_0611.onnx
+
+
+
+# 20240826 尝试导出selectivescan过程为一个onnx节点
+# 参考 https://www.jb51.net/python/317288aug.htm
+CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simplify_onnx_path submodel_lhk_chunk_simplify_new_op2.onnx --token_H_W 8 --chunksize 24 --custom_operator

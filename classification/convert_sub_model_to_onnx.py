@@ -48,6 +48,21 @@ import onnxoptimizer
 
 from collections import Counter
 
+from torch.autograd import Function
+from torch.onnx import OperatorExportTypes
+
+
+class CustomSelectiveScan(Function):
+    @staticmethod
+    def forward(ctx, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
+        output = selective_scan_easy(xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize=chunksize)
+        
+        return output
+    
+    @staticmethod
+    def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
+        return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize_i=chunksize)
+
 
 def CrossScan_onnx(x: torch.Tensor):
     # B, C, H, W = x.shape
@@ -228,9 +243,15 @@ class sub_model(nn.Module):
 
         # selective_scan 里有一个for循环，循环次数与维度L正相关。随着L增大，onnx的图就会迅速增大。
         # 维度L为16*16时，Netron可视化submodel的onnx需要大概五分钟的渲染时间。
-        ys: torch.Tensor = selective_scan(
-            xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus, args.chunksize
-        ).view(B, K, -1, H, W)
+        if not args.custom_operator:
+                ys: torch.Tensor = selective_scan(
+                    xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus, args.chunksize
+                ).view(B, K, -1, H, W)
+
+        # modify by lihaokun in 20240826 to add onnx node for selective_scan
+        else:
+            ys: torch.Tensor = CustomSelectiveScan.apply(
+                xs, dts, As, Bs, Cs, Ds, delta_bias, args.chunksize).view(B, K, -1, H, W)
 
         # 记录结束时间
         end_event.record()
@@ -322,6 +343,9 @@ def parse_option():
 
     parser.add_argument('--chunksize', type=int,default=32, help="chunksize")
 
+    parser.add_argument('--custom_operator', action='store_true',
+                        help='whether to use custom_operator for onnx')
+
 
     args, unparsed = parser.parse_known_args()
 
@@ -357,13 +381,18 @@ def main(config, args):
             input_names=['input'],   # 输入张量的名称
             output_names=['output'], # 输出张量的名称
             dynamic_axes={'input': {0: 'batch_size'},  # 变量批次大小
-                        'output': {0: 'batch_size'}})
+                        'output': {0: 'batch_size'}},
+            operator_export_type=OperatorExportTypes.ONNX_FALLTHROUGH)
         
     # 加载ONNX模型
     onnx_model = onnx.load(args.onnx_path)
     
     # 验证模型
-    onnx.checker.check_model(onnx_model)
+    ### 自定义onnx算子无法通过验证，所以跳过
+    if args.custom_operator:
+        print("ignore check_model because the onnx checker not supports custom operator")
+    else:
+        onnx.checker.check_model(onnx_model)
 
 
     graph = onnx_model.graph
@@ -375,30 +404,31 @@ def main(config, args):
         print(f"{op_type}: {count}")
     print(f"before optimize op_sum: {op_sum}")
     
-    # 创建运行时会话并测试模型
-    sess = onnxruntime.InferenceSession(args.onnx_path)
+    if not args.custom_operator:
+        # 创建运行时会话并测试模型
+        sess = onnxruntime.InferenceSession(args.onnx_path)
 
-    input_feed = {}
-    output_fetch = []
+        input_feed = {}
+        output_fetch = []
 
-    input_name = sess.get_inputs()[0].name
-    input_feed[input_name] = image_tensor.cpu().numpy()  # 替换为你的输入数据
-    
-    # 运行模型并获取输出
-    outputs = sess.run(output_fetch, input_feed)
-    output = torch.tensor(outputs[0]).cpu()
+        input_name = sess.get_inputs()[0].name
+        input_feed[input_name] = image_tensor.cpu().numpy()  # 替换为你的输入数据
+        
+        # 运行模型并获取输出
+        outputs = sess.run(output_fetch, input_feed)
+        output = torch.tensor(outputs[0]).cpu()
 
-    print("sum of onnx output:{}".format(torch.sum(output)))
-    print("min of onnx output:{}".format(torch.min(output)))
-    print("max of onnx output:{}".format(torch.max(output)))
+        print("sum of onnx output:{}".format(torch.sum(output)))
+        print("min of onnx output:{}".format(torch.min(output)))
+        print("max of onnx output:{}".format(torch.max(output)))
 
-    output_pytorch = model(image_tensor.cuda()).cpu()
-    print("sum of pytorch output:{}".format(torch.sum(output_pytorch)))
-    print("min of pytorch output:{}".format(torch.min(output_pytorch)))
-    print("max of pytorch output:{}".format(torch.max(output_pytorch)))
+        output_pytorch = model(image_tensor.cuda()).cpu()
+        print("sum of pytorch output:{}".format(torch.sum(output_pytorch)))
+        print("min of pytorch output:{}".format(torch.min(output_pytorch)))
+        print("max of pytorch output:{}".format(torch.max(output_pytorch)))
 
-    mean_difference = torch.mean((output_pytorch-output).abs())
-    print("mean_difference of pytorch output and onnx output:{}".format(mean_difference))
+        mean_difference = torch.mean((output_pytorch-output).abs())
+        print("mean_difference of pytorch output and onnx output:{}".format(mean_difference))
 
     
     if args.simplify_onnx_path != "":
@@ -424,25 +454,26 @@ def main(config, args):
             print(f"{op_type}: {count}")
         print(f"op_sum: {op_sum}")
         
-        # 验证模型
-        onnx.checker.check_model(onnx_model)
+        if not args.custom_operator:
+            # 验证模型
+            onnx.checker.check_model(onnx_model)
 
-        # 创建运行时会话并测试模型
-        sess = onnxruntime.InferenceSession(args.simplify_onnx_path)
+            # 创建运行时会话并测试模型
+            sess = onnxruntime.InferenceSession(args.simplify_onnx_path)
 
-        input_feed = {}
-        output_fetch = []
+            input_feed = {}
+            output_fetch = []
 
-        input_name = sess.get_inputs()[0].name
-        input_feed[input_name] = image_tensor.cpu().numpy()  # 替换为你的输入数据
-        
-        # 运行模型并获取输出
-        outputs = sess.run(output_fetch, input_feed)
-        output = torch.tensor(outputs[0]).cpu()
+            input_name = sess.get_inputs()[0].name
+            input_feed[input_name] = image_tensor.cpu().numpy()  # 替换为你的输入数据
+            
+            # 运行模型并获取输出
+            outputs = sess.run(output_fetch, input_feed)
+            output = torch.tensor(outputs[0]).cpu()
 
-        print("sum of simplify onnx output:{}".format(torch.sum(output)))
-        print("min of simplify onnx output:{}".format(torch.min(output)))
-        print("max of simplify onnx output:{}".format(torch.max(output)))
+            print("sum of simplify onnx output:{}".format(torch.sum(output)))
+            print("min of simplify onnx output:{}".format(torch.min(output)))
+            print("max of simplify onnx output:{}".format(torch.max(output)))
 
 if __name__ == '__main__':
     args, config = parse_option()

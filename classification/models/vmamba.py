@@ -36,6 +36,22 @@ except:
     from csms6s import SelectiveScanMamba, SelectiveScanCore, SelectiveScanOflex
     from csms6s import flops_selective_scan_fn, flops_selective_scan_ref, selective_scan_flop_jit
 
+
+# for custom operator
+from torch.autograd import Function
+
+class CustomSelectiveScan(Function):
+    @staticmethod
+    def forward(ctx, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
+        output = selective_scan_easy(xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize=chunksize)
+        
+        return output
+    
+    @staticmethod
+    def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
+        return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize_i=chunksize)
+
+
 # =====================================================
 # we have this class as linear and conv init differ from each other
 # this function enable loading from both conv2d or linear
@@ -172,8 +188,11 @@ def selective_scan_easy(us, dts, As, Bs, Cs, Ds, delta_bias=None, delta_softplus
         # dtBus = torch.einsum("lbgd,lbgn->lbgdn", duts, Bs)
         
         ### calculate Ats without einsum, modify by lihaokun at 20240710
-        dtBus = F.conv1d(Bs.contiguous().view(1, chunk_L*B*G, N), duts.contiguous().view(chunk_L*B*G*D, 1, 1), groups=chunk_L*B*G)
-        dtBus = dtBus.view(chunk_L, B, G, D, N).contiguous()
+        # dtBus = F.conv1d(Bs.contiguous().view(1, chunk_L*B*G, N), duts.contiguous().view(chunk_L*B*G*D, 1, 1), groups=chunk_L*B*G)
+        # dtBus = dtBus.view(chunk_L, B, G, D, N).contiguous()
+
+        ### calculate Ats without einsum and conv1d, modify by lihaokun at 20240826
+        dtBus = torch.matmul(duts.reshape(chunk_L*B*G,D,1), Bs.reshape(chunk_L*B*G,1,N)).reshape(chunk_L,B,G, D, N)
 
         # ### debug
         # dtBus_nan = torch.isnan(dtBus).sum().item()
@@ -814,8 +833,11 @@ class SS2Dv2:
             # # modify by lihaokun
             # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_ref, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224 
 
-            # modify by lihaokun  use selective_scan_chunk
-            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224 
+            # # modify by lihaokun  use selective_scan_chunk
+            # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224
+
+            # modify by lihaokun  use selective_scan_chunk and onnx custom_operator
+            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge, custom_operator=True),  # vmambav2_tiny_224
             
             # use this
             # ===============================
@@ -912,6 +934,7 @@ class SS2Dv2:
         no_einsum=False, # replace einsum with linear or conv1d to raise throughput
         # ==============================
         cascade2d=False,
+        custom_operator = False,
         **kwargs,
     ):
         x_proj_weight = self.x_proj_weight
@@ -1077,6 +1100,16 @@ class SS2Dv2:
             ys: torch.Tensor = selective_scan(
                 xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus
             ).view(B, K, -1, H, W)
+
+            # original code
+            if not custom_operator:
+                ys: torch.Tensor = selective_scan(xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus
+                ).view(B, K, -1, H, W)
+
+            # modify by lihaokun in 20240826 to add onnx node for selective_scan
+            else:
+                ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias, 24).view(B, K, -1, H, W)
+
             
             y: torch.Tensor = CrossMerge.apply(ys)
 
