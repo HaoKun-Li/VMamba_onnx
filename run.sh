@@ -47,9 +47,13 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 16 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --simplify_onnx 
 
 
-# batchsize为1，chunk并行版，无einsum，shape截断，替换inplace操作，避免分母为0，使用分块计算的cunsum算子,导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，使用自定义的onnx算子代替SelectiveScan
-CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0826.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0826.onnx" --simplify_onnx --custom_operator
-# to run
+# batchsize为1，chunk并行版，无einsum，shape截断，替换inplace操作，避免分母为0，使用分块计算的cunsum算子,导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，替换某一conv1d为matmul
+CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_replaceConv1d_0827_v2.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_replaceConv1d_0827_v2.onnx" --simplify_onnx
+
+
+# batchsize为1，chunk并行版，无einsum，shape截断，替换inplace操作，避免分母为0，使用分块计算的cunsum算子,导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，替换某一conv1d为matmul，使用自定义的onnx算子代替SelectiveScan
+CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0827.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0827.onnx" --simplify_onnx --custom_operator
+
 
 
 

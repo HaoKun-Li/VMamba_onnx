@@ -85,6 +85,15 @@ def CrossScan_onnx(x: torch.Tensor):
     return xs
 
 
+def CrossMerge_onnx(ys: torch.Tensor):
+    # B, K, D, H, W = ys.shape
+    B, K, D, H, W = map(int, ys.shape)
+    ys = ys.view(B, K, D, -1)
+    ys = ys[:, 0:2] + ys[:, 2:4].flip(dims=[-1]).view(B, 2, D, -1)
+    y = ys[:, 0] + ys[:, 1].view(B, -1, W, H).transpose(dim0=2, dim1=3).contiguous().view(B, D, -1)
+    return y
+
+
 def selective_scan_easy(us, dts, As, Bs, Cs, Ds, delta_bias=None, delta_softplus=True, return_last_state=False, chunksize=16):
     """
     # B: batch_size, G: groups, D: dim, N: state dim, L: seqlen
@@ -834,10 +843,10 @@ class SS2Dv2:
             # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_ref, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224 
 
             # # modify by lihaokun  use selective_scan_chunk
-            # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224
+            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224
 
-            # modify by lihaokun  use selective_scan_chunk and onnx custom_operator
-            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge, custom_operator=True),  # vmambav2_tiny_224
+            # # # modify by lihaokun  use selective_scan_chunk and onnx custom_operator
+            # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge_onnx, custom_operator=True),  # vmambav2_tiny_224
             
             # use this
             # ===============================
@@ -1111,7 +1120,10 @@ class SS2Dv2:
                 ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias, 24).view(B, K, -1, H, W)
 
             
-            y: torch.Tensor = CrossMerge.apply(ys)
+            # y: torch.Tensor = CrossMerge.apply(ys)
+
+            # modify by lihaokun at 20240827
+            y: torch.Tensor = CrossMerge_onnx(ys)
 
             if getattr(self, "__DEBUG__", False):
                 setattr(self, "__data__", dict(
