@@ -55,6 +55,10 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0827.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0827.onnx" --simplify_onnx --custom_operator
 
 
+# batchsize为1，chunk并行版，无einsum，shape截断，替换inplace操作，避免分母为0，使用分块计算的cunsum算子,导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，替换某一conv1d为matmul，使用自定义的onnx算子代替SelectiveScan，修复reshape形状获取失败的问题
+CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0909.onnx" --simplify_onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0909.onnx" --simplify_onnx --custom_operator
+
+
 
 
 #### 使用onnxoptimizer简化vmamba onnx模型
@@ -384,4 +388,45 @@ python calculate_op.py --onnx_path model_lhk_0611.onnx
 
 # 20240826 尝试导出selectivescan过程为一个onnx节点
 # 参考 https://www.jb51.net/python/317288aug.htm
-CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simplify_onnx_path submodel_lhk_chunk_simplify_new_op2.onnx --token_H_W 8 --chunksize 24 --custom_operator
+CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simplify_onnx_path submodel_lhk_chunk_simplify_new_op_20240909.onnx --token_H_W 8 --chunksize 24 --custom_operator 
+
+
+# CrossScan_onnx time: 24.826879501342773 ms
+# After CrossScan_onnx, before selective_scan time: 205.76153564453125 ms
+# Selective_scan time: 77.233154296875 ms
+# CrossMerge time: 0.27750399708747864 ms
+# After CrossMerge time: 0.027648000046610832 ms
+CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simplify_onnx_path submodel_lhk_chunk_simplify_new_op2.onnx --token_H_W 8 --chunksize 24 --custom_operator --test_pytorch_speed
+
+
+# CrossScan_onnx time: 17.26464080810547 ms
+# After CrossScan_onnx, before selective_scan time: 233.10643005371094 ms
+# Selective_scan time: 214.76864624023438 ms
+# CrossMerge time: 0.27750399708747864 ms
+# After CrossMerge time: 0.026623999699950218 ms
+CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simplify_onnx_path submodel_lhk_chunk_simplify_new_op2.onnx --token_H_W 8 --chunksize 24 --custom_operator --test_pytorch_speed --half
+
+
+# exp size [20, 20, 20, 20, 50] with fp32 format:0.34966400265693665 ms
+# exp size [20, 20, 20, 20, 50] with fp16 format:0.25040000677108765 ms
+
+# exp size [20, 20, 20, 20, 20] with fp32 format:0.2585279941558838 ms
+# exp size [20, 20, 20, 20, 20] with fp16 format:0.10105600208044052 ms
+
+# exp size [20, 20, 20, 20, 5] with fp32 format:0.04867200180888176 ms
+# exp size [20, 20, 20, 20, 5] with fp16 format:0.07097599655389786 ms
+
+# exp size [20, 20, 20, 20, 1] with fp32 format:0.051231998950242996 ms
+# exp size [20, 20, 20, 20, 1] with fp16 format:0.08451200276613235 ms
+
+# exp size [20, 20, 20, 200, 1] with fp32 format:0.27350398898124695 ms
+# exp size [20, 20, 20, 200, 1] with fp16 format:0.08419200032949448 ms
+
+# exp size [24, 1, 4, 192, 1] with fp32 format:0.01692800037562847 ms
+# exp size [24, 1, 4, 192, 1] with fp16 format:0.05734400078654289 ms
+
+
+
+# 20240909 尝试导出selectivescan过程为一个onnx节点，并导出只有一个selectivescan节点的onnx模型
+# 当分类模型输入的图像分辨率为224*224时，对于不同的block, [D, L]会有4种不同的取值组合，因此导出了四个onnx，对应四种类型
+CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --token_H_W 8 --chunksize 24 --custom_operator --only_selectivescan

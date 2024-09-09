@@ -289,6 +289,8 @@ def selective_scan_easy(us, dts, As, Bs, Cs, Ds, delta_bias=None, delta_softplus
     has_D = Ds is not None
 
     dts = dts.float()
+    # dts = dts.half()
+    
     if delta_bias is not None:
         # dts = dts + delta_bias.view(1, -1, 1).float()
         dts = dts + delta_bias[..., None]
@@ -301,12 +303,20 @@ def selective_scan_easy(us, dts, As, Bs, Cs, Ds, delta_bias=None, delta_softplus
         Cs = Cs.unsqueeze(1)
     # B, G, N, L = Bs.shape
     B, G, N, L = map(int, Bs.shape)
+
     us = us.view(B, G, -1, L).permute(3, 0, 1, 2).float()
     dts = dts.view(B, G, -1, L).permute(3, 0, 1, 2).float()
     As = As.view(G, -1, N).float()
     Bs = Bs.permute(3, 0, 1, 2).float()
     Cs = Cs.permute(3, 0, 1, 2).float()
     Ds = Ds.view(G, -1).float() if has_D else None
+
+    # us = us.view(B, G, -1, L).permute(3, 0, 1, 2).half()
+    # dts = dts.view(B, G, -1, L).permute(3, 0, 1, 2).half()
+    # As = As.view(G, -1, N).half()
+    # Bs = Bs.permute(3, 0, 1, 2).half()
+    # Cs = Cs.permute(3, 0, 1, 2).half()
+    # Ds = Ds.view(G, -1).half() if has_D else None
 
     # us = us.view(B, G, -1, L).permute(3, 0, 1, 2).double()
     # dts = dts.view(B, G, -1, L).permute(3, 0, 1, 2).double()
@@ -319,7 +329,11 @@ def selective_scan_easy(us, dts, As, Bs, Cs, Ds, delta_bias=None, delta_softplus
     
     oys = []
     # ohs = []
+
     hprefix = us.new_zeros((B, G, D, N), dtype=torch.float)
+
+    # hprefix = us.new_zeros((B, G, D, N), dtype=torch.half)
+
     # hprefix = us.new_zeros((B, G, D, N), dtype=torch.float64)
 
     # # original code
@@ -843,10 +857,10 @@ class SS2Dv2:
             # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_ref, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224 
 
             # # modify by lihaokun  use selective_scan_chunk
-            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224
+            # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224
 
             # # # modify by lihaokun  use selective_scan_chunk and onnx custom_operator
-            # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge_onnx, custom_operator=True),  # vmambav2_tiny_224
+            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge_onnx, custom_operator=True),  # vmambav2_tiny_224
             
             # use this
             # ===============================
@@ -957,9 +971,29 @@ class SS2Dv2:
         channel_first = self.channel_first
         to_fp32 = lambda *args: (_a.to(torch.float32) for _a in args)
 
-        B, D, H, W = x.shape
-        D, N = A_logs.shape
-        K, D, R = dt_projs_weight.shape
+        # B, D, H, W = x.shape
+        B, D, H, W = map(int, x.shape) # example [l,192,56,56])
+
+        # print("x.shape:{}".format(x.shape))
+
+        # D, N = A_logs.shape
+        KD, N = map(int, A_logs.shape) # example [768,1]
+
+        # print("A_logs.shape:{}".format(A_logs.shape))
+        
+        # K, D, R = dt_projs_weight.shape
+        K, D, R = map(int, dt_projs_weight.shape) # example [4,192,6]
+
+        # print("dt_projs_weight.shape:{}".format(dt_projs_weight.shape))
+
+        K, x_proj_weight_N, D= map(int, x_proj_weight.shape) # example [4,8,192]
+        
+        # print("x_proj_weight.shape:{}".format(x_proj_weight.shape))
+
+        # print("x_proj_bias.shape:{}".format(x_proj_bias.shape))
+
+        # print("dt_projs_bias.shape:{}".format(dt_projs_bias.shape))
+
         L = H * W
 
         def selective_scan(u, delta, A, B, C, D=None, delta_bias=None, delta_softplus=True):
@@ -1082,12 +1116,18 @@ class SS2Dv2:
             # xs = CrossScan.apply(x)
 
             ### modify by lihaokun 
-            xs = CrossScan_onnx(x)
+            xs = CrossScan_onnx(x) # [B, K, D, H*W]
 
             if no_einsum: # vmambav2_tiny_224
-                x_dbl = F.conv1d(xs.view(B, -1, L), x_proj_weight.view(-1, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
-                dts, Bs, Cs = torch.split(x_dbl.view(B, K, -1, L), [R, N, N], dim=2)
-                dts = F.conv1d(dts.contiguous().view(B, -1, L), dt_projs_weight.view(K * D, -1, 1), groups=K)
+                # x_dbl = F.conv1d(xs.view(B, -1, L), x_proj_weight.view(-1, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
+                x_dbl = F.conv1d(xs.view(B, K*D, L), x_proj_weight.view(K*x_proj_weight_N, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
+
+                # dts, Bs, Cs = torch.split(x_dbl.view(B, K, -1, L), [R, N, N], dim=2)
+                dts, Bs, Cs = torch.split(x_dbl.view(B, K, x_proj_weight_N, L), [R, N, N], dim=2)
+                
+                # dts = F.conv1d(dts.contiguous().view(B, -1, L), dt_projs_weight.view(K * D, -1, 1), groups=K)
+                dts = F.conv1d(dts.contiguous().view(B, K*R, L), dt_projs_weight.view(K * D, R, 1), groups=K)
+
             else:
                 x_dbl = torch.einsum("b k d l, k c d -> b k c l", xs, x_proj_weight)
                 if x_proj_bias is not None:
@@ -1095,29 +1135,37 @@ class SS2Dv2:
                 dts, Bs, Cs = torch.split(x_dbl, [R, N, N], dim=2)
                 dts = torch.einsum("b k r l, k d r -> b k d l", dts, dt_projs_weight)
 
-            xs = xs.view(B, -1, L)
-            dts = dts.contiguous().view(B, -1, L)
+            # xs = xs.view(B, -1, L)
+            # dts = dts.contiguous().view(B, -1, L)
+            # As = -torch.exp(A_logs.to(torch.float)) # (k * c, d_state)
+            # Bs = Bs.contiguous().view(B, K, N, L)
+            # Cs = Cs.contiguous().view(B, K, N, L)
+            # Ds = Ds.to(torch.float) # (K * c)
+            # delta_bias = dt_projs_bias.view(-1).to(torch.float)
+
+            xs = xs.view(B, K*D, L)
+            dts = dts.contiguous().view(B, K*D, L)
             As = -torch.exp(A_logs.to(torch.float)) # (k * c, d_state)
             Bs = Bs.contiguous().view(B, K, N, L)
             Cs = Cs.contiguous().view(B, K, N, L)
             Ds = Ds.to(torch.float) # (K * c)
-            delta_bias = dt_projs_bias.view(-1).to(torch.float)
+            delta_bias = dt_projs_bias.view(K*D).to(torch.float)
 
             if force_fp32: # false
                 xs, dts, Bs, Cs = to_fp32(xs, dts, Bs, Cs)
 
-            ys: torch.Tensor = selective_scan(
-                xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus
-            ).view(B, K, -1, H, W)
+            # ys: torch.Tensor = selective_scan(
+            #     xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus
+            # ).view(B, K, -1, H, W)
 
             # original code
             if not custom_operator:
                 ys: torch.Tensor = selective_scan(xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus
-                ).view(B, K, -1, H, W)
+                ).view(B, K, D, H, W)
 
             # modify by lihaokun in 20240826 to add onnx node for selective_scan
             else:
-                ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias, 24).view(B, K, -1, H, W)
+                ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias, 24).view(B, K, D, H, W)
 
             
             # y: torch.Tensor = CrossMerge.apply(ys)

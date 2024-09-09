@@ -36,7 +36,7 @@ from models.csms6s import CrossScan, CrossMerge
 
 # from models.vmamba import selective_scan_ref, CrossScan_onnx, mamba_init, selective_scan_easy
 
-from models.vmamba import selective_scan_ref, mamba_init, selective_scan_easy
+from models.vmamba import selective_scan_ref, mamba_init, selective_scan_easy, CrossMerge_onnx
 
 import onnxruntime
 import onnx
@@ -266,7 +266,10 @@ class sub_model(nn.Module):
         # 记录开始时间
         start_event.record()
 
-        y: torch.Tensor = CrossMerge.apply(ys)
+        # y: torch.Tensor = CrossMerge.apply(ys)
+
+        # modify by lihaokun at 20240827
+        y: torch.Tensor = CrossMerge_onnx(ys)
     
         # 记录结束时间
         end_event.record()
@@ -295,6 +298,108 @@ class sub_model(nn.Module):
         
         
         return y
+    
+class sub_selectiveScan_model(nn.Module):
+    def __init__(self, **kwargs,):
+        super().__init__()
+
+        print("finish init sub_model")
+
+    def forward(self, xs, dts, As, Bs, Cs, Ds, delta_bias):
+        
+        B, D_4, L = map(int, xs.shape)
+        K = 4
+        D = int(D_4/K)
+        H = W = int(math.sqrt(L))
+
+        print("K:{} D:{} H:{} W:{}".format(K, D, H, W))
+
+        def selective_scan(u, delta, A, B, C, D=None, delta_bias=None, delta_softplus=True, chunksize=32):
+            # ### original code
+            # return SelectiveScan.apply(u, delta, A, B, C, D, delta_bias, delta_softplus, -1, -1, ssoflex)
+
+            # selective_scan_dict = torch.load('selective_scan_dict.pt')
+
+            # u = selective_scan_dict["u"]
+            # delta = selective_scan_dict["delta"]
+            # A = selective_scan_dict["A"]
+            # B = selective_scan_dict["B"]
+            # C = selective_scan_dict["C"]
+            # D = selective_scan_dict["D"]
+            # delta_bias = selective_scan_dict["delta_bias"]
+            
+            # print("finish load selective_scan_dict")
+        
+            # for item in [u, delta, A, B, C, D, delta_bias]:
+            #     print("shape:{} mean:{} min:{} max:{} var:{}".format(item.size(), item.mean(), item.min(), item.max(), torch.var(item)))
+
+            ### modify by lihaokun
+            # result_original = selective_scan_ref(u, delta, A, B, C, D, delta_bias, delta_softplus, True)
+
+            result =  selective_scan_easy(u, delta, A, B, C, D, delta_bias, delta_softplus, False, chunksize)
+
+            # difference = result_original-result
+            # relative_error = difference/result_original
+            # print("difference:{}".format(difference))
+            # print("difference mean:{}  max:{}  min:{}".format(difference.abs().mean(), difference.max(), difference.min()))
+            # print("relative_error mean:{}  max:{}  min:{}".format(relative_error.abs().mean(), relative_error.max(), relative_error.min()))
+        
+            return result
+
+        ys: torch.Tensor = CustomSelectiveScan.apply(
+                xs, dts, As, Bs, Cs, Ds, delta_bias, args.chunksize).view(B, K, D, H, W)
+        
+        return ys
+    
+    
+def export_onnx_with_one_selectivescan(args, block_type=0):
+
+    # build submodel
+    model = sub_selectiveScan_model().cuda()
+    
+    B = 1 # batch_size
+    K = 4
+    N = 1
+
+    # 当分类模型输入的图像分辨率为224*224时，对于不同的block, [D, L]会有4种不同的取值组合
+    D_list = [192, 384, 768, 1536]
+    L_list = [56*56, 28*28, 14*14, 7*7]
+
+    # 建议四种情况都进行测试
+    D = D_list[block_type]
+    L = L_list[block_type]
+
+    xs = torch.randint(-5, 5, [B, K*D, L]).float().cuda() / 50 # [B, K*D, L]
+    dts = torch.randint(-5, 5, [B, K*D, L]).float().cuda() / 50 # [B, K*D, L]
+    As = torch.randint(-5, 5, [K*D, N]).float().cuda() / 50 # [K*D, N]
+    Bs = torch.randint(-5, 5, [B, K, N, L]).float().cuda() / 50 # [B, K, N, L]
+    Cs = torch.randint(-5, 5, [B, K, N, L]).float().cuda() / 50 # [B, K, N, L]
+    Ds = torch.randint(-5, 5, [K*D,]).float().cuda() / 50 # [K*D]
+    delta_bias = torch.randint(-5, 5, [K*D,]).float().cuda() / 50 # [K*D]
+
+    onnx_path = "SelectiveScan_type"+str(block_type)+".onnx"
+
+
+    # 模型转换为onnx
+    torch.onnx.export(model,               # 运行的模型
+            (xs, dts, As, Bs, Cs, Ds, delta_bias),                  # 模型输入（通常是dummy input）
+            onnx_path,       # 输出ONNX文件的路径
+            export_params=True, # 是否导出模型参数
+            opset_version=12,   # ONNX版本
+            verbose = True, 
+            do_constant_folding=True,  # 是否执行常量折叠优化
+            input_names=['xs', 'dts', 'As', 'Bs', 'Cs', 'Ds', 'delta_bias'],   # 输入张量的名称
+            output_names=['output'], # 输出张量的名称
+            dynamic_axes={'xs': {0: 'batch_size'},  # 变量批次大小
+                          'dts': {0: 'batch_size'},
+                          'Bs': {0: 'batch_size'},
+                          'Cs': {0: 'batch_size'},
+                        'output': {0: 'batch_size'}},
+            operator_export_type=OperatorExportTypes.ONNX_FALLTHROUGH)
+
+    print("finish expoer onnx with only selectiveScan:{}".format(onnx_path))
+    
+    return 
 
 
 def parse_option():
@@ -319,7 +424,7 @@ def parse_option():
     parser.add_argument('--accumulation-steps', type=int, help="gradient accumulation steps")
     parser.add_argument('--use-checkpoint', action='store_true',
                         help="whether to use gradient checkpointing to save memory")
-    parser.add_argument('--disable_amp', action='store_true', help='Disable pytorch amp')
+    parser.add_argument('--half', action='store_true', help='use pytorch half')
     parser.add_argument('--output', default='/tmp', type=str, metavar='PATH',
                         help='root of output folder, the full path is <output>/<model_name>/<tag> (default: output)')
     parser.add_argument('--tag', default=time.strftime("%Y%m%d%H%M%S", time.localtime()), help='tag of experiment')
@@ -345,7 +450,10 @@ def parse_option():
 
     parser.add_argument('--custom_operator', action='store_true',
                         help='whether to use custom_operator for onnx')
+    
+    parser.add_argument('--test_pytorch_speed', action='store_true', help='only test Pytorch Speed')
 
+    parser.add_argument('--only_selectivescan', action='store_true', help='export onnx with only selectivescan')
 
     args, unparsed = parser.parse_known_args()
 
@@ -355,9 +463,71 @@ def parse_option():
 
 
 def main(config, args):
+
+    if args.only_selectivescan:
+        for block_tpye in range(4):
+            export_onnx_with_one_selectivescan(args, block_tpye)
+
+        assert False
+
+
     # build submodel
     model = sub_model().cuda()
     image_tensor = torch.randint(-5, 5, [args.batch_size, 192, args.token_H_W, args.token_H_W]).float().cuda() / 50 # [B, C, H, W]
+
+    # with torch.cuda.amp.autocast(enabled=args.amp):
+    #     output = model(image_tensor)
+
+    if args.half:
+        image_tensor = image_tensor.half()
+        model = model.half()
+
+    output = model(image_tensor)
+
+    if args.test_pytorch_speed:
+
+        # 定义开始和结束事件
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        size_of_tensor = [24, 1, 4, 192, 1] # chunk_L, B, G, D, N
+        
+        test_tensor = torch.randint(-5, 5, size_of_tensor).float().cuda()
+
+        # 记录开始时间
+        start_event.record()
+        
+        torch.exp(test_tensor)
+
+        # 记录结束时间
+        end_event.record()
+
+        # 等待所有流上的所有先前GPU任务完成
+        torch.cuda.synchronize()
+
+        # 计算耗时
+        elapsed_time_ms = start_event.elapsed_time(end_event)
+
+        print("exp size {} with fp32 format:{} ms".format(size_of_tensor, elapsed_time_ms))
+        
+        test_tensor = torch.randint(-5, 5, size_of_tensor).half().cuda()
+        
+        # 记录开始时间
+        start_event.record()
+
+        torch.exp(test_tensor)
+        
+        # 记录结束时间
+        end_event.record()
+
+        # 等待所有流上的所有先前GPU任务完成
+        torch.cuda.synchronize()
+
+        # 计算耗时
+        elapsed_time_ms = start_event.elapsed_time(end_event)
+        print("exp size {} with fp16 format:{} ms".format(size_of_tensor, elapsed_time_ms))
+
+        assert False
 
     # # 模型转换为onnx
     # torch.onnx.export(model,               # 运行的模型
@@ -383,7 +553,7 @@ def main(config, args):
             dynamic_axes={'input': {0: 'batch_size'},  # 变量批次大小
                         'output': {0: 'batch_size'}},
             operator_export_type=OperatorExportTypes.ONNX_FALLTHROUGH)
-        
+            
     # 加载ONNX模型
     onnx_model = onnx.load(args.onnx_path)
     
