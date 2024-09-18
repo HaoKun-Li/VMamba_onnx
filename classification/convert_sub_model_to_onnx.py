@@ -52,16 +52,27 @@ from torch.autograd import Function
 from torch.onnx import OperatorExportTypes
 
 
+# class CustomSelectiveScan(Function):
+#     @staticmethod
+#     def forward(ctx, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
+#         output = selective_scan_easy(xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize=chunksize)
+        
+#         return output
+    
+#     @staticmethod
+#     def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
+#         return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize_i=chunksize)
+
 class CustomSelectiveScan(Function):
     @staticmethod
-    def forward(ctx, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
-        output = selective_scan_easy(xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize=chunksize)
+    def forward(ctx, xs, dts, As, Bs, Cs, Ds, delta_bias):
+        output = selective_scan_ref(xs, dts, As, Bs, Cs, Ds, delta_bias)
         
         return output
     
     @staticmethod
-    def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
-        return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize_i=chunksize)
+    def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias):
+        return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias)
 
 
 def CrossScan_onnx(x: torch.Tensor):
@@ -167,25 +178,35 @@ class sub_model(nn.Module):
             # ### original code
             # return SelectiveScan.apply(u, delta, A, B, C, D, delta_bias, delta_softplus, -1, -1, ssoflex)
 
-            # selective_scan_dict = torch.load('selective_scan_dict.pt')
+            selective_scan_dict = torch.load('selective_scan_dict.pt')
 
-            # u = selective_scan_dict["u"]
-            # delta = selective_scan_dict["delta"]
-            # A = selective_scan_dict["A"]
-            # B = selective_scan_dict["B"]
-            # C = selective_scan_dict["C"]
-            # D = selective_scan_dict["D"]
-            # delta_bias = selective_scan_dict["delta_bias"]
+            u = selective_scan_dict["u"]
+            delta = selective_scan_dict["delta"]
+            A = selective_scan_dict["A"]
+            B = selective_scan_dict["B"]
+            C = selective_scan_dict["C"]
+            D = selective_scan_dict["D"]
+            delta_bias = selective_scan_dict["delta_bias"]
             
-            # print("finish load selective_scan_dict")
+            print("finish load selective_scan_dict")
+
+            print("size of xs:{}".format(u.size()))
+            print("size of dts:{}".format(delta.size()))
+            print("size of As:{}".format(A.size()))
+            print("size of Bs:{}".format(B.size()))
+            print("size of Cs:{}".format(C.size()))
+            print("size of Ds:{}".format(D.size()))
+            print("size of delta_bias:{}".format(delta_bias.size()))
         
             # for item in [u, delta, A, B, C, D, delta_bias]:
             #     print("shape:{} mean:{} min:{} max:{} var:{}".format(item.size(), item.mean(), item.min(), item.max(), torch.var(item)))
 
             ### modify by lihaokun
-            # result_original = selective_scan_ref(u, delta, A, B, C, D, delta_bias, delta_softplus, True)
+            result_original = selective_scan_ref(u, delta, A, B, C, D, delta_bias, delta_softplus, True)
 
-            result =  selective_scan_easy(u, delta, A, B, C, D, delta_bias, delta_softplus, False, chunksize)
+            return result_original
+
+            # result =  selective_scan_easy(u, delta, A, B, C, D, delta_bias, delta_softplus, False, chunksize)
 
             # difference = result_original-result
             # relative_error = difference/result_original
@@ -193,7 +214,7 @@ class sub_model(nn.Module):
             # print("difference mean:{}  max:{}  min:{}".format(difference.abs().mean(), difference.max(), difference.min()))
             # print("relative_error mean:{}  max:{}  min:{}".format(relative_error.abs().mean(), relative_error.max(), relative_error.min()))
         
-            return result
+            # return result
 
 
 
@@ -248,10 +269,15 @@ class sub_model(nn.Module):
                     xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus, args.chunksize
                 ).view(B, K, -1, H, W)
 
-        # modify by lihaokun in 20240826 to add onnx node for selective_scan
+        # # modify by lihaokun in 20240826 to add onnx node for selective_scan
+        # else:
+        #     ys: torch.Tensor = CustomSelectiveScan.apply(
+        #         xs, dts, As, Bs, Cs, Ds, delta_bias, args.chunksize).view(B, K, -1, H, W)
+
+        # modify by lihaokun in 20240918 to add onnx node for selective_scan_ref
         else:
             ys: torch.Tensor = CustomSelectiveScan.apply(
-                xs, dts, As, Bs, Cs, Ds, delta_bias, args.chunksize).view(B, K, -1, H, W)
+                xs, dts, As, Bs, Cs, Ds, delta_bias).view(B, K, -1, H, W)
 
         # 记录结束时间
         end_event.record()
@@ -346,8 +372,11 @@ class sub_selectiveScan_model(nn.Module):
         
             return result
 
+        # ys: torch.Tensor = CustomSelectiveScan.apply(
+        #         xs, dts, As, Bs, Cs, Ds, delta_bias, args.chunksize).view(B, K, D, H, W)
+
         ys: torch.Tensor = CustomSelectiveScan.apply(
-                xs, dts, As, Bs, Cs, Ds, delta_bias, args.chunksize).view(B, K, D, H, W)
+                xs, dts, As, Bs, Cs, Ds, delta_bias).view(B, K, D, H, W)
         
         return ys
     
@@ -377,7 +406,7 @@ def export_onnx_with_one_selectivescan(args, block_type=0):
     Ds = torch.randint(-5, 5, [K*D,]).float().cuda() / 50 # [K*D]
     delta_bias = torch.randint(-5, 5, [K*D,]).float().cuda() / 50 # [K*D]
 
-    onnx_path = "SelectiveScan_type"+str(block_type)+".onnx"
+    onnx_path = "selective_scan_ref_"+str(block_type)+".onnx"
 
 
     # 模型转换为onnx

@@ -426,7 +426,9 @@ CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simp
 # exp size [24, 1, 4, 192, 1] with fp16 format:0.05734400078654289 ms
 
 
-
-# 20240909 尝试导出selectivescan过程为一个onnx节点，并导出只有一个selectivescan节点的onnx模型
+# 20240918 尝试导出selectivescan过程为一个onnx节点，并导出只有一个selectivescan节点的onnx模型，节点参考函数为selective_scan_ref()
 # 当分类模型输入的图像分辨率为224*224时，对于不同的block, [D, L]会有4种不同的取值组合，因此导出了四个onnx，对应四种类型
-CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --token_H_W 8 --chunksize 24 --custom_operator --only_selectivescan
+CUDA_VISIBLE_DEVICES=3 python convert_sub_model_to_onnx.py --custom_operator --only_selectivescan 
+
+# 读取模型真是推理时的算子输入，比对该算子的pytorch和onnx的计算结果
+CUDA_VISIBLE_DEVICES=3 python convert_sub_model_to_onnx.py
