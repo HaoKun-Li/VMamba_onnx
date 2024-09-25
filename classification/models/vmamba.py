@@ -40,17 +40,27 @@ except:
 # for custom operator
 from torch.autograd import Function
 
+# class CustomSelectiveScan(Function):
+#     @staticmethod
+#     def forward(ctx, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
+#         output = selective_scan_easy(xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize=chunksize)
+        
+#         return output
+    
+#     @staticmethod
+#     def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
+#         return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize_i=chunksize)
+
 class CustomSelectiveScan(Function):
     @staticmethod
-    def forward(ctx, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
-        output = selective_scan_easy(xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize=chunksize)
+    def forward(ctx, xs, dts, As, Bs, Cs, Ds, delta_bias):
+        output = selective_scan_ref(xs, dts, As, Bs, Cs, Ds, delta_bias)
         
         return output
     
     @staticmethod
-    def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize):
-        return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias, chunksize_i=chunksize)
-
+    def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias):
+        return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias)
 
 # =====================================================
 # we have this class as linear and conv init differ from each other
@@ -75,9 +85,16 @@ def CrossScan_onnx(x: torch.Tensor):
     # xs[:, 1] = x.transpose(dim0=2, dim1=3).flatten(2, 3)
     # xs[:, 2:4] = torch.flip(xs[:, 0:2], dims=[-1])
 
-    ### modify by lihaokun 20240709
-    xs_0 = x.flatten(2, 3)
-    xs_1 = x.transpose(dim0=2, dim1=3).flatten(2, 3)
+    # ### modify by lihaokun 20240709
+    # xs_0 = x.flatten(2, 3)
+    # xs_1 = x.transpose(dim0=2, dim1=3).flatten(2, 3)
+    # xs_01 = torch.stack((xs_0, xs_1), dim=1)
+    # xs_23 = torch.flip(xs_01, dims=[-1])
+    # xs = torch.cat((xs_01, xs_23), dim=1)
+    
+    ### modify by lihaokun 20240919  使用view替换flatten，消除onnx里的为获取tensor形状而新增的shape节点。
+    xs_0 = x.view(B, C, H*W)
+    xs_1 = x.transpose(dim0=2, dim1=3).reshape(B, C, H*W)
     xs_01 = torch.stack((xs_0, xs_1), dim=1)
     xs_23 = torch.flip(xs_01, dims=[-1])
     xs = torch.cat((xs_01, xs_23), dim=1)
@@ -1163,9 +1180,13 @@ class SS2Dv2:
                 ys: torch.Tensor = selective_scan(xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus
                 ).view(B, K, D, H, W)
 
-            # modify by lihaokun in 20240826 to add onnx node for selective_scan
+            # # modify by lihaokun in 20240826 to add onnx node for selective_scan
+            # else:
+            #     ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias, 24).view(B, K, D, H, W)
+
+            # modify by lihaokun in 20240909 to add onnx node for selective_scan_ref
             else:
-                ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias, 24).view(B, K, D, H, W)
+                ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias).view(B, K, D, H, W)
 
             
             # y: torch.Tensor = CrossMerge.apply(ys)

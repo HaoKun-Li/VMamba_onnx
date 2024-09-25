@@ -512,6 +512,10 @@ def main(config, args):
         model = model.half()
 
     output = model(image_tensor)
+    
+    print("sum of pytorch output:{}".format(torch.sum(output)))
+    print("min of pytorch output:{}".format(torch.min(output)))
+    print("max of pytorch output:{}".format(torch.max(output)))
 
     if args.test_pytorch_speed:
 
