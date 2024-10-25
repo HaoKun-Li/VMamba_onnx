@@ -1,0 +1,117 @@
+||fork||=> merge config from /home/test/code/VMamba-main/classification/configs/vssm/vmambav2_tiny_224.yaml
+RANK and WORLD_SIZE in environ: 0/1
+/tmp/vssm1_tiny_0230/20241010115834
+[2024-10-10 11:58:34 vssm1_tiny_0230](inference_lhk.py 618): INFO Full config saved to /tmp/vssm1_tiny_0230/20241010115834/config.json
+[2024-10-10 11:58:34 vssm1_tiny_0230](inference_lhk.py 621): INFO AMP_ENABLE: true
+AMP_OPT_LEVEL: ''
+AUG:
+  AUTO_AUGMENT: rand-m9-mstd0.5-inc1
+  COLOR_JITTER: 0.4
+  CUTMIX: 1.0
+  CUTMIX_MINMAX: null
+  MIXUP: 0.8
+  MIXUP_MODE: batch
+  MIXUP_PROB: 1.0
+  MIXUP_SWITCH_PROB: 0.5
+  RECOUNT: 1
+  REMODE: pixel
+  REPROB: 0.25
+BASE:
+- ''
+DATA:
+  BATCH_SIZE: 1
+  CACHE_MODE: part
+  DATASET: imagenet
+  DATA_PATH: /mnt/hdd/Datasets/imagenet/
+  IMG_SIZE: 224
+  INTERPOLATION: bicubic
+  MASK_PATCH_SIZE: 32
+  MASK_RATIO: 0.6
+  NUM_WORKERS: 8
+  PIN_MEMORY: true
+  ZIP_MODE: false
+ENABLE_AMP: false
+EVAL_MODE: false
+FUSED_LAYERNORM: false
+MODEL:
+  DROP_PATH_RATE: 0.2
+  DROP_RATE: 0.0
+  LABEL_SMOOTHING: 0.1
+  MMCKPT: false
+  NAME: vssm1_tiny_0230
+  NUM_CLASSES: 1000
+  PRETRAINED: /home/test/code/VMamba-main/vssm_tiny_0230_ckpt_epoch_262.pth
+  RESUME: ''
+  TYPE: vssm
+  VSSM:
+    DEPTHS:
+    - 2
+    - 2
+    - 5
+    - 2
+    DOWNSAMPLE: v3
+    EMBED_DIM: 96
+    GMLP: false
+    IN_CHANS: 3
+    MLP_ACT_LAYER: gelu
+    MLP_DROP_RATE: 0.0
+    MLP_RATIO: 4.0
+    NORM_LAYER: ln2d
+    PATCHEMBED: v2
+    PATCH_NORM: true
+    PATCH_SIZE: 4
+    POSEMBED: false
+    SSM_ACT_LAYER: silu
+    SSM_CONV: 3
+    SSM_CONV_BIAS: false
+    SSM_DROP_RATE: 0.0
+    SSM_DT_RANK: auto
+    SSM_D_STATE: 1
+    SSM_FORWARDTYPE: v05_noz
+    SSM_INIT: v0
+    SSM_RANK_RATIO: 2.0
+    SSM_RATIO: 2.0
+OUTPUT: /tmp/vssm1_tiny_0230/20241010115834
+PRINT_FREQ: 10
+SAVE_FREQ: 1
+SEED: 0
+TAG: '20241010115834'
+TEST:
+  CROP: true
+  SEQUENTIAL: false
+  SHUFFLE: false
+THROUGHPUT_MODE: false
+TRAIN:
+  ACCUMULATION_STEPS: 1
+  AUTO_RESUME: true
+  BASE_LR: 9.765625e-07
+  CLIP_GRAD: 5.0
+  EPOCHS: 300
+  LAYER_DECAY: 1.0
+  LR_SCHEDULER:
+    DECAY_EPOCHS: 30
+    DECAY_RATE: 0.1
+    GAMMA: 0.1
+    MULTISTEPS: []
+    NAME: cosine
+    WARMUP_PREFIX: true
+  MIN_LR: 9.765625e-09
+  MOE:
+    SAVE_MASTER: false
+  OPTIMIZER:
+    BETAS:
+    - 0.9
+    - 0.999
+    EPS: 1.0e-08
+    MOMENTUM: 0.9
+    NAME: adamw
+  START_EPOCH: 0
+  USE_CHECKPOINT: false
+  WARMUP_EPOCHS: 20
+  WARMUP_LR: 9.765625e-10
+  WEIGHT_DECAY: 0.05
+TRAINCOST_MODE: false
+
+[2024-10-10 11:58:34 vssm1_tiny_0230](inference_lhk.py 622): INFO {"cfg": "/home/test/code/VMamba-main/classification/configs/vssm/vmambav2_tiny_224.yaml", "opts": null, "batch_size": 1, "data_path": "/mnt/hdd/Datasets/imagenet/", "zip": false, "cache_mode": "part", "pretrained": "/home/test/code/VMamba-main/vssm_tiny_0230_ckpt_epoch_262.pth", "resume": null, "accumulation_steps": null, "use_checkpoint": false, "disable_amp": false, "output": "/tmp", "tag": "20241010115834", "eval": false, "throughput": false, "fused_layernorm": false, "optim": null, "model_ema": true, "model_ema_decay": 0.9999, "model_ema_force_cpu": false, "memory_limit_rate": -1, "convert_to_onnx": false, "onnx_path": "/mnt/ssd/hmh/VMamba-main/classification/model_lhk_0611.onnx", "eval_onnx": true, "inference_time_pytorch": false, "inference_time_onnx": false, "inference_time_simply_onnx": false, "simplify_onnx": false, "simplify_onnx_path": "", "custom_operator": false, "save_file_path": true}
+rank 0 successfully build train dataset
+rank 0 successfully build val dataset

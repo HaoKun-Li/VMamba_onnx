@@ -64,6 +64,14 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0919.onnx" --simplify_onnx_path "model_lhk_simpliy_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0919.onnx" --simplify_onnx --custom_operator
 
 
+# batchsize为16，导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，使用自定义的onnx算子代替SelectiveScan中的for循环过程且把batch维度置后以便于每个lane批量运算
+CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 16 --convert_to_onnx --onnx_path "model_lhk_batchsize16_custom_operator_1025.onnx" --simplify_onnx_path "model_lhk_simpliy_batchsize16_custom_operator_1025.onnx" --simplify_onnx --custom_operator
+
+
+# batchsize为32，导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，使用自定义的onnx算子代替SelectiveScan中的for循环过程且把batch维度置后以便于每个lane批量运算
+CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 32 --convert_to_onnx --onnx_path "model_lhk_batchsize32_custom_operator_1025.onnx" --simplify_onnx_path "model_lhk_simpliy_batchsize32_custom_operator_1025.onnx" --simplify_onnx --custom_operator
+
+
 #### 使用onnxoptimizer简化vmamba onnx模型
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --onnx_path "model_lhk_0611.onnx" --simplify_onnx_path "model_lhk_simpliy_0611.onnx" --simplify_onnx
 
@@ -79,10 +87,14 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --onnx_path "submodel_lhk_simplify_32_32.onnx" --simplify_onnx_path "submodel_lhk_simplify_v2_32_32.onnx" --simplify_onnx
 
 
+
 # 测试替换算子后的pytorch模型在imagenet测试集的准确率
 # Acc@1 82.488 Acc@5 95.994
 # 使用pytorch版的selective_scan_ref, CrossScan, CrossMerge
 CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval
+
+
+CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --custom_operator
 
 
 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --pretrained /home/test/code/VMamba-main/vssm1_tiny_0230s_ckpt_epoch_264.pth
@@ -113,6 +125,9 @@ CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.launch --nnodes=1 --node_rank
 
 # Acc@1 82.400 Acc@5 95.908
 CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29504 inference_lhk.py --batch-size 16 --onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize16_0725.onnx" --eval_onnx 
+
+
+CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29502 inference_lhk.py --batch-size 1 --onnx_path "/mnt/ssd/hmh/VMamba-main/classification/model_lhk_0611.onnx" --eval_onnx --save_file_path 2>&1 | tee eval_onnx_log20241010.txt
 
 
 ########## 测试pytorch模型、onnx模型、简化后的onnx模型的推理速度(FP32)
@@ -433,5 +448,5 @@ CUDA_VISIBLE_DEVICES=1 python convert_sub_model_to_onnx.py --batch_size 4 --simp
 # 当分类模型输入的图像分辨率为224*224时，对于不同的block, [D, L]会有4种不同的取值组合，因此导出了四个onnx，对应四种类型
 CUDA_VISIBLE_DEVICES=3 python convert_sub_model_to_onnx.py --custom_operator --only_selectivescan 
 
-# 读取模型真是推理时的算子输入，比对该算子的pytorch和onnx的计算结果
+# 读取模型真实推理时的算子输入，比对该算子的pytorch和onnx的计算结果
 CUDA_VISIBLE_DEVICES=3 python convert_sub_model_to_onnx.py 

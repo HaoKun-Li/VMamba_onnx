@@ -62,6 +62,16 @@ class CustomSelectiveScan(Function):
     def symbolic(g: torch.Graph, xs, dts, As, Bs, Cs, Ds, delta_bias):
         return g.op("SelectiveScan", xs, dts, As, Bs, Cs, Ds, delta_bias)
 
+
+class CustomSelectiveScan_batch_end(Function):
+    @staticmethod
+    def forward(ctx, u, A, C, D, deltaA, deltaB_u):
+        output = for_loop_in_selective_scan_ref_batch_end(u, A, C, D, deltaA, deltaB_u)
+        return output
+    
+    @staticmethod
+    def symbolic(g: torch.Graph, u, A, C, D, deltaA, deltaB_u):
+        return g.op("SelectiveScan_batch_end", u, A, C, D, deltaA, deltaB_u)
 # =====================================================
 # we have this class as linear and conv init differ from each other
 # this function enable loading from both conv2d or linear
@@ -445,6 +455,110 @@ def selective_scan_ref(
 
         out = y if D is None else y + u * D.unsqueeze(-1)
         return out if oflex else out.to(dtype=dtype_in)
+
+
+
+def selective_scan_ref_batch_end(
+        u: torch.Tensor, # (B, K * C, L)
+        delta: torch.Tensor, # (B, K * C, L)
+        A: torch.Tensor, # (K * C, N)
+        B: torch.Tensor, # (B, K, N, L)
+        C: torch.Tensor, # (B, K, N, L)
+        D: torch.Tensor = None, # (K * C)
+        delta_bias: torch.Tensor = None, # (K * C)
+        delta_softplus=True, 
+        oflex=True, 
+        **kwargs
+    ):
+        dtype_in = u.dtype
+        # Batch, K, N, L = B.shape
+        # KCdim = u.shape[1]
+        Batch, K, N, L = map(int, B.shape)
+        KCdim = int(u.shape[1])
+        Cdim = int(KCdim / K)
+        assert u.shape == (Batch, KCdim, L)
+        assert delta.shape == (Batch, KCdim, L)
+        assert A.shape == (KCdim, N)
+        assert C.shape == B.shape
+
+        if delta_bias is not None:
+            delta = delta + delta_bias[..., None]
+        if delta_softplus:
+            delta = torch.nn.functional.softplus(delta)
+            
+        u, delta, A, B, C = u.float(), delta.float(), A.float(), B.float(), C.float()
+        B = B.view(Batch, K, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, KCdim, N, L)
+        C = C.view(Batch, K, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, KCdim, N, L)
+
+        # # original code
+        # deltaA = torch.exp(torch.einsum('bdl,dn->bdln', delta, A))
+        # deltaB_u = torch.einsum('bdl,bdnl,bdl->bdln', delta, B, u)
+        
+        # ### calculate deltaA without einsum, modify by lihaokun at 20240702
+        deltaA = torch.exp(F.conv1d(delta.contiguous().view(Batch, KCdim, L), A.view(-1, 1, 1), groups=KCdim))
+        deltaA = deltaA.view(Batch, KCdim, N, L).transpose(dim0=2, dim1=3).contiguous()
+        
+        # ### calculate deltaB_u without einsum, modify by lihaokun at 20240702
+        B = B.transpose(dim0=2, dim1=3).contiguous()
+        deltaB_u = F.conv1d(delta.contiguous().view(1,Batch*KCdim*L, 1), B.view(Batch*KCdim*L*N, 1, 1), groups=Batch*KCdim*L)
+        deltaB_u = F.conv1d(deltaB_u.contiguous().view(1,Batch*KCdim*L, N), u.contiguous().view(int(Batch*KCdim*L), 1, 1), groups=Batch*KCdim*L).view(Batch, KCdim, L, N)
+
+
+        #### add transpose to operator's input 20241025
+        deltaA = deltaA.transpose(dim0=0, dim1=3).contiguous()   # [Batch, KCdim, L, N] to [N, KCdim, L, Batch]
+        deltaB_u = deltaB_u.transpose(dim0=0, dim1=3).contiguous() # [Batch, KCdim, L, N] to [N, KCdim, L, Batch]
+        C = C.transpose(dim0=0, dim1=3).contiguous() # [Batch, KCdim, N, L] to [L, KCdim, N, Batch]
+        u = u.transpose(dim0=0, dim1=2).contiguous() # [Batch, KCdim, L] to [L, KCdim, Batch]
+
+        # new operator 20241025
+        out = CustomSelectiveScan_batch_end.apply(u, A, C, D, deltaA, deltaB_u)
+
+        #### add transpose to operator's output 20241025
+        out = out.transpose(dim0=0, dim1=2) # [L, KCdim, Batch] to [Batch, KCdim, L]
+
+
+        # #### original code
+        # if True:
+        #     x = A.new_zeros((Batch, KCdim, N))
+        #     ys = []
+        #     for i in range(L):
+        #         x = deltaA[:, :, i, :] * x + deltaB_u[:, :, i, :]
+
+        #         # # original code
+        #         # y = torch.einsum('bdn,bdn->bd', x, C[:, :, :, i])
+
+        #         ### calculate y without einsum, modify by lihaokun at 20240702
+        #         y = F.conv1d(x.view(1,Batch*KCdim*N,1), C[:, :, :, i].contiguous().view(Batch*KCdim, N , 1), groups=Batch*KCdim).view(Batch, KCdim)
+
+        #         ys.append(y)
+
+        #     y = torch.stack(ys, dim=2) # (B, C, L)
+
+        # out = y if D is None else y + u * D.unsqueeze(-1)
+
+        
+        return out if oflex else out.to(dtype=dtype_in)
+
+
+
+def for_loop_in_selective_scan_ref_batch_end(u, A, C, D, deltaA, deltaB_u):
+    N, KCdim, L, Batch = map(int, deltaA.shape)
+
+    x = A.new_zeros((N, KCdim, Batch)) # [N, KCdim, Batch]
+    ys = []
+    for i in range(L):
+        x = deltaA[:, :, i, :] * x + deltaB_u[:, :, i, :]   # [N, KCdim, Batch]
+
+        # 当N==1时，省略了N维度，进行了简化
+        y = torch.mul(x[0, :, :], C[i, :, 0, :]) # [KCdim, B] 之间的点乘
+
+        ys.append(y)
+    
+    y = torch.stack(ys, dim=0) # (L, KCdim, Batch)
+    out = y if D is None else y + u * D.unsqueeze(-1)
+
+    return out
+
 
 
 class Linear2d(nn.Linear):
@@ -1184,10 +1298,13 @@ class SS2Dv2:
             # else:
             #     ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias, 24).view(B, K, D, H, W)
 
-            # modify by lihaokun in 20240909 to add onnx node for selective_scan_ref
-            else:
-                ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias).view(B, K, D, H, W)
+            # # modify by lihaokun in 20240909 to add onnx node for selective_scan_ref
+            # else:
+            #     ys: torch.Tensor = CustomSelectiveScan.apply(xs, dts, As, Bs, Cs, Ds, delta_bias).view(B, K, D, H, W)
 
+            # modify by lihaokun in 20241025 to add onnx node that perform the for loop in selective_scan_ref
+            else:
+                ys: torch.Tensor = selective_scan_ref_batch_end(xs, dts, As, Bs, Cs, Ds, delta_bias).view(B, K, D, H, W)
             
             # y: torch.Tensor = CrossMerge.apply(ys)
 

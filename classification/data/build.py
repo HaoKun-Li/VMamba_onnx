@@ -18,6 +18,9 @@ from .cached_image_folder import CachedImageFolder
 from .imagenet22k_dataset import IN22KDATASET
 from .samplers import SubsetRandomSampler
 
+from torch.utils.data import Dataset, DataLoader
+from PIL import Image
+
 try:
     from torchvision.transforms import InterpolationMode
 
@@ -39,6 +42,29 @@ try:
     timm_transforms._pil_interp = _pil_interp
 except:
     from timm.data.transforms import _pil_interp
+
+
+
+class CustomImageFolder(datasets.ImageFolder):
+    def __init__(self, root_dir, transform=None):
+        super(CustomImageFolder, self).__init__(root_dir, transform=transform) 
+    
+    def __getitem__(self, index: int):
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (sample, target) where target is class_index of the target class.
+        """
+        path, target = self.samples[index]
+        sample = self.loader(path)
+        if self.transform is not None:
+            sample = self.transform(sample)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return sample, [target, path]
 
 
 def build_loader(config):
@@ -106,7 +132,14 @@ def build_dataset(is_train, config):
                                         cache_mode=config.DATA.CACHE_MODE if is_train else 'part')
         else:
             root = os.path.join(config.DATA.DATA_PATH, prefix)
-            dataset = datasets.ImageFolder(root, transform=transform)
+
+            if hasattr(config, 'save_file_path'):
+                if config.save_file_path:
+                    dataset = CustomImageFolder(root, transform=transform)
+                else:
+                    dataset = datasets.ImageFolder(root, transform=transform)
+            else:
+                dataset = datasets.ImageFolder(root, transform=transform)
 
 # =============================================================================
 # # JUST for test

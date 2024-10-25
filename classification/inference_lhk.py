@@ -44,6 +44,7 @@ import time
 from collections import Counter
 from torch.onnx import OperatorExportTypes
 
+
 transform = transforms.Compose([
     transforms.Resize((224, 224)),  # 调整图像大小到224x224
     transforms.ToTensor(),          # 将图像转换为Tensor
@@ -134,7 +135,9 @@ def parse_option():
 
     parser.add_argument('--custom_operator', action='store_true',
                         help='whether to use custom_operator for onnx')
-                        
+
+    parser.add_argument('--save_file_path', action='store_true',
+                        help='whether to save each data file path ')                 
 
 
     args, unparsed = parser.parse_known_args()
@@ -219,9 +222,16 @@ def validate_onnx(config, data_loader, onnx_model_path):
     acc5_meter = AverageMeter()
 
     end = time.time()
+    
     for idx, (images, target) in enumerate(data_loader):
         images = images.numpy()
-        target = target.cpu()
+
+        if config.save_file_path:
+            path = target[1]
+            target = target[0]
+        else:
+            target = target.cpu()
+
 
         # print("shape of input:{}".format(images.shape))
         
@@ -250,6 +260,12 @@ def validate_onnx(config, data_loader, onnx_model_path):
         batch_time.update(time.time() - end)
         end = time.time()
 
+
+        if config.save_file_path:
+            with open('onnx_predict.txt', 'a') as file:
+                file.write("{}\t{}\t{}\n".format(path, target, acc1))
+
+
         if idx % config.PRINT_FREQ == 0:
             memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
             logger.info(
@@ -259,7 +275,10 @@ def validate_onnx(config, data_loader, onnx_model_path):
                 f'Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t'
                 f'Acc@5 {acc5_meter.val:.3f} ({acc5_meter.avg:.3f})\t'
                 f'Mem {memory_used:.0f}MB')
+            
     logger.info(f' * Acc@1 {acc1_meter.avg:.3f} Acc@5 {acc5_meter.avg:.3f}')
+
+        
     return acc1_meter.avg, acc5_meter.avg, loss_meter.avg
 
 
@@ -354,7 +373,7 @@ def main(config, args):
         
     
     if args.eval_onnx:
-        dataset_train, dataset_val, data_loader_train, data_loader_val, mixup_fn = build_loader(config)
+        dataset_train, dataset_val, data_loader_train, data_loader_val, mixup_fn = build_loader(config, )
         acc1, acc5, loss = validate_onnx(config, data_loader_val, args.onnx_path)
         logger.info(f"Accuracy of the network on the {len(dataset_val)} test images: {acc1:.1f}%")
 

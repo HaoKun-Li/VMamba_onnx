@@ -286,6 +286,9 @@ def update_config(config, args):
     # output folder
     config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, config.TAG)
 
+    if _check_args('save_file_path'):
+        config.save_file_path = args.save_file_path
+
     config.freeze()
 
 
