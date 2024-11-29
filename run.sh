@@ -73,6 +73,13 @@ CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 32 --convert_to_onnx --onnx_path "model_lhk_batchsize32_custom_operator_1102.onnx" --simplify_onnx_path "model_lhk_simpliy_batchsize32_custom_operator_1102.onnx" --simplify_onnx --custom_operator
 
 
+
+# batchsize为16，导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，使用自定义的onnx算子代替SelectiveScan中的for循环过程，把batch维度置后以便于每个lane批量运算，消除CrossScan和CrossMerge中的flip运算
+CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 16 --convert_to_onnx --onnx_path "model_lhk_batchsize16_custom_operator_no_flip_1129.onnx" --simplify_onnx_path "model_lhk_simpliy_batchsize16_custom_operator_no_flip_1129.onnx" --simplify_onnx --custom_operator 2>&1 | tee export_log.txt
+
+
+
+
 #### 使用onnxoptimizer简化vmamba onnx模型
 CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --onnx_path "model_lhk_0611.onnx" --simplify_onnx_path "model_lhk_simpliy_0611.onnx" --simplify_onnx
 
@@ -481,5 +488,3 @@ python3 inference_on_BM1684X.py --batch-size 1 --onnx_path "model_lhk_simpliy_ch
 
 
 
-# debug 测试准确率
-CUDA_VISIBLE_DEVICES=7 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --custom_operator --batch-size 16

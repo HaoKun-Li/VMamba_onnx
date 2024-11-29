@@ -625,42 +625,31 @@ def for_loop_in_selective_scan_ref_batch_end(u, A, C, D, deltaA, deltaB_u):
 
 
 def for_loop_in_selective_scan_ref_batch_end_late_flip(u, C, D, deltaA, deltaB_u):
-
     # 此时，u, delta, deltaB_u, B, C, deltaA 的下半部分的L维度都是没有flip的   
     N, KCdim, L, Batch = map(int, deltaA.shape)
-
     Cdim_plus_2 = int(KCdim/2)
 
     deltaA_up = deltaA[:, :Cdim_plus_2, :, :]
     deltaA_down = deltaA[:, Cdim_plus_2:, :, :]
-
     deltaB_u_up = deltaB_u[:, :Cdim_plus_2, :, :]
     deltaB_u_down = deltaB_u[:, Cdim_plus_2:, :, :]
-
     C_up = C[:, :Cdim_plus_2, :, :]
     C_down = C[:, Cdim_plus_2:, :, :]
 
     x_up = C.new_zeros((N, Cdim_plus_2, Batch)) # [N, 2*Cdim, Batch]
     x_down = C.new_zeros((N, Cdim_plus_2, Batch)) # [N, 2*Cdim, Batch]
-
     y_up = C.new_zeros((L, Cdim_plus_2, Batch))
     y_down = C.new_zeros((L, Cdim_plus_2, Batch))
 
     for i in range(L):
         x_up = deltaA_up[:, :, i, :] * x_up + deltaB_u_up[:, :, i, :]   # [N, 2*Cdim, Batch]
-        
         x_down = deltaA_down[:, :, L-1-i, :] * x_down + deltaB_u_down[:, :, L-1-i, :]   # [N, 2*Cdim, Batch]
-
-        # 此时，x, u, delta, deltaB_u, B, C, deltaA 的下半部分的L维度都是没有flip的
 
         # 当N==1时，省略了N维度，进行了简化
         y_up[i, :, :] = torch.mul(x_up[0, :, :], C_up[i, :, 0, :]) # [2*Cdim, B] 之间的点乘
         y_down[L-1-i, :, :] = torch.mul(x_down[0, :, :], C_down[L-1-i, :, 0, :]) # [2*Cdim, B] 之间的点乘
 
-        # 此时，x, y, u, delta, deltaB_u, B, C, deltaA 的下半部分的L维度都是没有flip的
-    
     y = torch.cat((y_up, y_down), dim=1) 
-
     out = y if D is None else y + u * D.unsqueeze(-1)
 
     return out
