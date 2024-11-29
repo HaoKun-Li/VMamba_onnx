@@ -76,13 +76,13 @@ class CustomSelectiveScan_batch_end(Function):
 
 class CustomSelectiveScan_batch_end_late_flip(Function):
     @staticmethod
-    def forward(ctx, u, C, D, deltaA, deltaB_u):
-        output = for_loop_in_selective_scan_ref_batch_end_late_flip(u, C, D, deltaA, deltaB_u)
+    def forward(ctx, u_up, u_down, A_up, A_down, C_up, C_down, D_up, D_down, deltaA_up, deltaA_down, deltaB_u_up, deltaB_u_down):
+        output = for_loop_in_selective_scan_ref_batch_end_late_flip(u_up, u_down, A_up, A_down, C_up, C_down, D_up, D_down, deltaA_up, deltaA_down, deltaB_u_up, deltaB_u_down)
         return output
     
     @staticmethod
-    def symbolic(g: torch.Graph, u, C, D, deltaA, deltaB_u):
-        return g.op("SelectiveScan_batch_end_late_flip", u, C, D, deltaA, deltaB_u)
+    def symbolic(g: torch.Graph, u_up, u_down, A_up, A_down, C_up, C_down, D_up, D_down, deltaA_up, deltaA_down, deltaB_u_up, deltaB_u_down):
+        return g.op("SelectiveScan_batch_end_late_flip", u_up, u_down, A_up, A_down, C_up, C_down, D_up, D_down, deltaA_up, deltaA_down, deltaB_u_up, deltaB_u_down)
 # =====================================================
 # we have this class as linear and conv init differ from each other
 # this function enable loading from both conv2d or linear
@@ -159,11 +159,12 @@ def CrossMerge_onnx(ys: torch.Tensor):
     return y
 
 
-def CrossMerge_onnx_late_flip(ys: torch.Tensor):
+def CrossMerge_onnx_late_flip(ys_up: torch.Tensor, ys_down: torch.Tensor):
     # B, K, D, H, W = ys.shape
-    B, K, D, H, W = map(int, ys.shape)
-    ys = ys.view(B, K, D, -1)
-    ys = ys[:, 0:2] + ys[:, 2:4]
+    B, K_half, D, H, W = map(int, ys_up.shape)
+    ys_up = ys_up.view(B, K_half, D, -1)
+    ys_down = ys_down.view(B, K_half, D, -1)
+    ys = ys_up + ys_down.flip(dims=[-1]).view(B, 2, D, -1)
     y = ys[:, 0] + ys[:, 1].view(B, -1, W, H).transpose(dim0=2, dim1=3).contiguous().view(B, D, -1)
     return y
 
@@ -528,40 +529,108 @@ def selective_scan_ref_batch_end(
         assert A.shape == (KCdim, N)
         assert C.shape == B.shape
 
-        if delta_bias is not None:
-            delta = delta + delta_bias[..., None]
-        if delta_softplus:
-            delta = torch.nn.functional.softplus(delta)
-        
-        u, delta, A, B, C = u.float(), delta.float(), A.float(), B.float(), C.float()
-        B = B.view(Batch, K, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, KCdim, N, L)
-        C = C.view(Batch, K, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, KCdim, N, L)
+        # divide input into two part
+        if not Late_flip:
+            if delta_bias is not None:
+                delta = delta + delta_bias[..., None]
+            if delta_softplus:
+                delta = torch.nn.functional.softplus(delta)
+            
+            u, delta, A, B, C = u.float(), delta.float(), A.float(), B.float(), C.float()
+            B = B.view(Batch, K, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, KCdim, N, L)
+            C = C.view(Batch, K, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, KCdim, N, L)
+
+        else:
+            delta_up = delta[:, :2*Cdim, :]
+            delta_down = delta[:, 2*Cdim:, :]
+
+            delta_bias_up = delta_bias[:2*Cdim]
+            delta_bias_down = delta_bias[2*Cdim:]
+
+            if delta_bias is not None:
+                delta_up = delta_up + delta_bias_up[..., None]
+                delta_down = delta_down + delta_bias_down[..., None]
+            if delta_softplus:
+                delta_up = torch.nn.functional.softplus(delta_up)
+                delta_down = torch.nn.functional.softplus(delta_down)
+
+            u, delta, A, B, C = u.float(), delta.float(), A.float(), B.float(), C.float()
+
+            A_up = A[0:2*Cdim, :]
+            A_down = A[2*Cdim:, :]
+
+            B_up = B[:, :2, :, :]
+            B_down = B[:, 2: , :, :]
+
+            C_up = C[:, :2, :, :]
+            C_down = C[:, 2: , :, :]
+
+            B_up = B_up.view(Batch, 2, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, 2*Cdim, N, L)
+            B_down = B_down.view(Batch, 2, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, 2*Cdim, N, L)
+
+            C_up = C_up.view(Batch, 2, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, 2*Cdim, N, L)
+            C_down = C_down.view(Batch, 2, 1, N, L).repeat(1, 1, Cdim, 1, 1).view(Batch, 2*Cdim, N, L)
 
         # # original code
         # deltaA = torch.exp(torch.einsum('bdl,dn->bdln', delta, A))
         # deltaB_u = torch.einsum('bdl,bdnl,bdl->bdln', delta, B, u)
         
-        
-        # ### calculate deltaA without einsum, modify by lihaokun at 20240702
-        deltaA = torch.exp(F.conv1d(delta.contiguous().view(Batch, KCdim, L), A.view(-1, 1, 1), groups=KCdim)) #此处运算与L顺序无关，是否flip并不影响
-        deltaA = deltaA.view(Batch, KCdim, N, L).transpose(dim0=2, dim1=3).contiguous()
-        
-        # ### calculate deltaB_u without einsum, modify by lihaokun at 20240702
-        B = B.transpose(dim0=2, dim1=3).contiguous()
-
-        if N == 1:
-            # [Batch, KCdim, L] * [Batch, KCdim, L] * [Batch, KCdim, L]
-            deltaB_u = (delta * B.view(Batch, KCdim, L) * u).view(Batch, KCdim, L, N)
-        else:
-            deltaB_u = F.conv1d(delta.contiguous().view(1,Batch*KCdim*L, 1), B.view(Batch*KCdim*L*N, 1, 1), groups=Batch*KCdim*L)
-            deltaB_u = F.conv1d(deltaB_u.contiguous().view(1,Batch*KCdim*L, N), u.contiguous().view(int(Batch*KCdim*L), 1, 1), groups=Batch*KCdim*L).view(Batch, KCdim, L, N)
-        
+        if not Late_flip:
+            # ### calculate deltaA without einsum, modify by lihaokun at 20240702
+            deltaA = torch.exp(F.conv1d(delta.contiguous().view(Batch, KCdim, L), A.view(-1, 1, 1), groups=KCdim)) #此处运算与L顺序无关，是否flip并不影响
+            deltaA = deltaA.view(Batch, KCdim, N, L).transpose(dim0=2, dim1=3).contiguous()
             
-        #### add transpose to operator's input 20241025
-        deltaA = deltaA.transpose(dim0=0, dim1=3).contiguous()   # [Batch, KCdim, L, N] to [N, KCdim, L, Batch]
-        deltaB_u = deltaB_u.transpose(dim0=0, dim1=3).contiguous() # [Batch, KCdim, L, N] to [N, KCdim, L, Batch]
-        C = C.transpose(dim0=0, dim1=3).contiguous() # [Batch, KCdim, N, L] to [L, KCdim, N, Batch]
-        u = u.transpose(dim0=0, dim1=2).contiguous() # [Batch, KCdim, L] to [L, KCdim, Batch]
+            # ### calculate deltaB_u without einsum, modify by lihaokun at 20240702
+            B = B.transpose(dim0=2, dim1=3).contiguous()
+
+            if N == 1:
+                # [Batch, KCdim, L] * [Batch, KCdim, L] * [Batch, KCdim, L]
+                deltaB_u = (delta * B.view(Batch, KCdim, L) * u).view(Batch, KCdim, L, N)
+            else:
+                deltaB_u = F.conv1d(delta.contiguous().view(1,Batch*KCdim*L, 1), B.view(Batch*KCdim*L*N, 1, 1), groups=Batch*KCdim*L)
+                deltaB_u = F.conv1d(deltaB_u.contiguous().view(1,Batch*KCdim*L, N), u.contiguous().view(int(Batch*KCdim*L), 1, 1), groups=Batch*KCdim*L).view(Batch, KCdim, L, N)
+        
+        else:
+            assert N == 1
+
+            deltaA_up = torch.exp(F.conv1d(delta_up.contiguous().view(Batch, 2*Cdim, L), A_up.view(-1, 1, 1), groups=2*Cdim)) 
+
+            deltaA_down = torch.exp(F.conv1d(delta_down.contiguous().view(Batch, 2*Cdim, L), A_down.view(-1, 1, 1), groups=2*Cdim)) 
+
+            deltaA_up = deltaA_up.view(Batch, 2*Cdim, N, L).transpose(dim0=2, dim1=3).contiguous()
+            deltaA_down = deltaA_down.view(Batch, 2*Cdim, N, L).transpose(dim0=2, dim1=3).contiguous()
+
+            B_up = B_up.transpose(dim0=2, dim1=3).contiguous()
+            B_down = B_down.transpose(dim0=2, dim1=3).contiguous()
+
+            assert N == 1
+
+            u_up = u[:, :2*Cdim , :]
+            u_down = u[:, 2*Cdim: , :]
+
+            # [Batch, KCdim, L] * [Batch, KCdim, L] * [Batch, KCdim, L]
+            deltaB_u_up = (delta_up * B_up.view(Batch, 2*Cdim, L) * u_up).view(Batch, 2*Cdim, L, N)
+
+            deltaB_u_down = (delta_down * B_down.view(Batch, 2*Cdim, L) * u_down).view(Batch, 2*Cdim, L, N)
+
+
+        if not Late_flip:
+            #### add transpose to operator's input 20241025
+            deltaA = deltaA.transpose(dim0=0, dim1=3).contiguous()   # [Batch, KCdim, L, N] to [N, KCdim, L, Batch]
+            deltaB_u = deltaB_u.transpose(dim0=0, dim1=3).contiguous() # [Batch, KCdim, L, N] to [N, KCdim, L, Batch]
+            C = C.transpose(dim0=0, dim1=3).contiguous() # [Batch, KCdim, N, L] to [L, KCdim, N, Batch]
+            u = u.transpose(dim0=0, dim1=2).contiguous() # [Batch, KCdim, L] to [L, KCdim, Batch]
+
+        else:
+            #### add transpose to operator's input 20241025
+            deltaA_up = deltaA_up.transpose(dim0=0, dim1=3).contiguous()
+            deltaA_down = deltaA_down.transpose(dim0=0, dim1=3).contiguous() 
+            deltaB_u_up = deltaB_u_up.transpose(dim0=0, dim1=3).contiguous() 
+            deltaB_u_down = deltaB_u_down.transpose(dim0=0, dim1=3).contiguous() 
+            C_up = C_up.transpose(dim0=0, dim1=3).contiguous() 
+            C_down = C_down.transpose(dim0=0, dim1=3).contiguous() 
+            u_up = u_up.transpose(dim0=0, dim1=2).contiguous()
+            u_down = u_down.transpose(dim0=0, dim1=2).contiguous()
 
 
         if not Late_flip:
@@ -569,15 +638,24 @@ def selective_scan_ref_batch_end(
             out = CustomSelectiveScan_batch_end.apply(u, A, C, D, deltaA, deltaB_u)
 
         else:
-            # 此时，u, delta, deltaB_u, B, C, deltaA 的下半部分的L维度都是没有flip的
-            out = CustomSelectiveScan_batch_end_late_flip.apply(u, C, D, deltaA, deltaB_u)
+            D_up = D[:2*Cdim]
+            D_down = D[2*Cdim:]
+
+            out_up, out_down = CustomSelectiveScan_batch_end_late_flip.apply(u_up, u_down, A_up, A_down, C_up, C_down, D_up, D_down, deltaA_up, deltaA_down, deltaB_u_up, deltaB_u_down)
 
 
-        #### add transpose to operator's output 20241025
-        out = out.transpose(dim0=0, dim1=2) # [L, KCdim, Batch] to [Batch, KCdim, L]
-        return out if oflex else out.to(dtype=dtype_in)
+        if not Late_flip:
+            #### add transpose to operator's output 20241025
+            out = out.transpose(dim0=0, dim1=2) # [L, KCdim, Batch] to [Batch, KCdim, L]
+            return out if oflex else out.to(dtype=dtype_in)
 
-
+        else:
+            out_up = out_up.transpose(dim0=0, dim1=2)
+            out_down = out_down.transpose(dim0=0, dim1=2) 
+            if oflex:
+                return out_up, out_down 
+            else:
+                return out_up.to(dtype=dtype_in), out_down.to(dtype=dtype_in)
 
         # #### original code
         # if True:
@@ -624,46 +702,34 @@ def for_loop_in_selective_scan_ref_batch_end(u, A, C, D, deltaA, deltaB_u):
 
 
 
-def for_loop_in_selective_scan_ref_batch_end_late_flip(u, C, D, deltaA, deltaB_u):
+def for_loop_in_selective_scan_ref_batch_end_late_flip(u_up, u_down, A_up, A_down, C_up, C_down, D_up, D_down, deltaA_up, deltaA_down, deltaB_u_up, deltaB_u_down):
+    
+    N, Cdim_plus_2, L, Batch = map(int, deltaA_up.shape)
 
-    # 此时，u, delta, deltaB_u, B, C, deltaA 的下半部分的L维度都是没有flip的   
-    N, KCdim, L, Batch = map(int, deltaA.shape)
+    x_up = A_up.new_zeros((N, Cdim_plus_2, Batch)) # [N, 2*Cdim, Batch]
+    x_down = A_down.new_zeros((N, Cdim_plus_2, Batch)) # [N, 2*Cdim, Batch]
 
-    Cdim_plus_2 = int(KCdim/2)
-
-    deltaA_up = deltaA[:, :Cdim_plus_2, :, :]
-    deltaA_down = deltaA[:, Cdim_plus_2:, :, :]
-
-    deltaB_u_up = deltaB_u[:, :Cdim_plus_2, :, :]
-    deltaB_u_down = deltaB_u[:, Cdim_plus_2:, :, :]
-
-    C_up = C[:, :Cdim_plus_2, :, :]
-    C_down = C[:, Cdim_plus_2:, :, :]
-
-    x_up = C.new_zeros((N, Cdim_plus_2, Batch)) # [N, 2*Cdim, Batch]
-    x_down = C.new_zeros((N, Cdim_plus_2, Batch)) # [N, 2*Cdim, Batch]
-
-    y_up = C.new_zeros((L, Cdim_plus_2, Batch))
-    y_down = C.new_zeros((L, Cdim_plus_2, Batch))
+    ys_up = []
+    ys_down = []
 
     for i in range(L):
         x_up = deltaA_up[:, :, i, :] * x_up + deltaB_u_up[:, :, i, :]   # [N, 2*Cdim, Batch]
-        
-        x_down = deltaA_down[:, :, L-1-i, :] * x_down + deltaB_u_down[:, :, L-1-i, :]   # [N, 2*Cdim, Batch]
-
-        # 此时，x, u, delta, deltaB_u, B, C, deltaA 的下半部分的L维度都是没有flip的
+        x_down = deltaA_down[:, :, i, :] * x_down + deltaB_u_down[:, :, i, :]   # [N, 2*Cdim, Batch]
 
         # 当N==1时，省略了N维度，进行了简化
-        y_up[i, :, :] = torch.mul(x_up[0, :, :], C_up[i, :, 0, :]) # [2*Cdim, B] 之间的点乘
-        y_down[L-1-i, :, :] = torch.mul(x_down[0, :, :], C_down[L-1-i, :, 0, :]) # [2*Cdim, B] 之间的点乘
+        y_up = torch.mul(x_up[0, :, :], C_up[i, :, 0, :]) # [2*Cdim, B] 之间的点乘
+        y_down = torch.mul(x_down[0, :, :], C_down[i, :, 0, :]) # [2*Cdim, B] 之间的点乘
 
-        # 此时，x, y, u, delta, deltaB_u, B, C, deltaA 的下半部分的L维度都是没有flip的
+        ys_up.append(y_up)
+        ys_down.append(y_down)
     
-    y = torch.cat((y_up, y_down), dim=1) 
+    y_up = torch.stack(ys_up, dim=0) # (L, 2*Cdim, Batch)
+    y_down = torch.stack(ys_down, dim=0) # (L, 2*Cdim, Batch)
 
-    out = y if D is None else y + u * D.unsqueeze(-1)
+    out_up = y_up if D_up is None else y_up + u_up * D_up.unsqueeze(-1)
+    out_down = y_down if D_down is None else y_down + u_down * D_down.unsqueeze(-1)
 
-    return out
+    return out_up, out_down
 
 
 
@@ -1364,23 +1430,93 @@ class SS2Dv2:
 
             # modify by lihaokun that move the flip after conv1d at 20241029
             else:
-                xs = CrossScan_onnx_no_flip(x) # [B, K, D, H*W]
+                # Todo debug
+                # xs = CrossScan_onnx_no_flip(x) # [B, K, D, H*W]
 
+                # try to divide xs to two parts
+                xs = CrossScan_onnx(x) # [B, K, D, H*W]
+                xs_up = xs[:, 0:2, :, :].contiguous()
+                xs_down = xs[:, 2:4, :, :].contiguous()
+
+            # original, we need to flip the x, which is in size of [B, 2, D, L]
             # D_list = [192, 384, 768, 1536]
             # L_list = [56*56, 28*28, 14*14, 7*7]
+            # thus, the flip number is huge because D and L is big: 2*B*D*L
+
+
+            ## if we flip the x_dbl rather than the x, we only need to flip the size of [B， 2*x_proj_weight_N, L]
+            # x_proj_weight_N = 8
+            # thus, the flip number is much small: 2*8*D + 2*B*8*L = 16*D+16*B*L
+
 
             if no_einsum: # vmambav2_tiny_224
                 # x_dbl = F.conv1d(xs.view(B, -1, L), x_proj_weight.view(-1, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
 
+
+                # ### debug
+                # # xs_original = xs.clone()
+
+                # xs_no_flip = xs[:, :2, :, :].contiguous()
+                # xs_flip = xs[:, 2:, :, :].contiguous()
+                # xs_flip = torch.flip(xs_flip, dims=[-1])
+                # xs = torch.cat((xs_no_flip, xs_flip), dim=1) # [B, 4, D, L]
+
                 if x_proj_bias is not None:
                     assert False
 
-                x_dbl = F.conv1d(xs.contiguous().view(B, K*D, L), x_proj_weight.view(K*x_proj_weight_N, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
-                
-                dts, Bs, Cs = torch.split(x_dbl.view(B, K, x_proj_weight_N, L), [R, N, N], dim=2) # R=6, N=1
+                # xs_0 = xs[:, 0, :, :].contiguous() # [B, D, L]
+                # xs_1 = xs[:, 1, :, :].contiguous() # [B, D, L]
+                # xs_2 = xs[:, 2, :, :].contiguous() # [B, D, L]
+                # xs_3 = xs[:, 3, :, :].contiguous() # [B, D, L]
 
-                # dts = F.conv1d(dts.contiguous().view(B, -1, L), dt_projs_weight.view(K * D, -1, 1), groups=K)
-                dts = F.conv1d(dts.contiguous().view(B, K*R, L), dt_projs_weight.view(K * D, R, 1), groups=K)
+                # xs_2 = torch.flip(xs_2, dims=[2])
+                # xs_3 = torch.flip(xs_3, dims=[2])
+
+                # ## print((xs_original - xs_rebuild).abs().sum())
+
+                # x_proj_weight_0 = x_proj_weight[0, :, :].contiguous()
+                # x_proj_weight_1 = x_proj_weight[1, :, :].contiguous()
+                # x_proj_weight_2 = x_proj_weight[2, :, :].contiguous()
+                # x_proj_weight_3 = x_proj_weight[3, :, :].contiguous()
+
+                # x_dbl_0 = F.conv1d(xs_0, x_proj_weight_0.view(x_proj_weight_N, D, 1), bias=None)
+                # x_dbl_1 = F.conv1d(xs_1, x_proj_weight_1.view(x_proj_weight_N, D, 1), bias=None)
+                # x_dbl_2 = F.conv1d(xs_2, x_proj_weight_2.view(x_proj_weight_N, D, 1), bias=None)
+                # x_dbl_3 = F.conv1d(xs_3, x_proj_weight_3.view(x_proj_weight_N, D, 1), bias=None)
+
+                # x_dbl_2 = torch.flip(x_dbl_2, dims=[2])
+                # x_dbl_3 = torch.flip(x_dbl_3, dims=[2])
+
+                # x_dbl = torch.stack([x_dbl_0, x_dbl_1, x_dbl_2, x_dbl_3], dim=1) # [B, K, x_proj_weight_N, L)]
+
+                if not Late_flip:
+                    x_dbl = F.conv1d(xs.contiguous().view(B, K*D, L), x_proj_weight.view(K*x_proj_weight_N, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
+
+                else:
+                    x_dbl_up = F.conv1d(xs_up.contiguous().view(B, 2*D, L), x_proj_weight[0:2, :, :].contiguous().view(2*x_proj_weight_N, D, 1), bias=None, groups=2)
+                    x_dbl_down = F.conv1d(xs_down.contiguous().view(B, 2*D, L), x_proj_weight[2:4, :, :].contiguous().view(2*x_proj_weight_N, D, 1), bias=None, groups=2)
+                
+                # modify by lihaokun that move the flip after conv1d at 20241029
+                # x_dbl [B, K*x_proj_weight_N, L]
+                # if Late_flip:
+                #     x_dbl_no_flip = x_dbl[:, :2*x_proj_weight_N, :]
+                #     x_dbl_flip = torch.flip(x_dbl[:, 2*x_proj_weight_N:, :], dims=[-1])
+                #     x_dbl = torch.cat((x_dbl_no_flip, x_dbl_flip), dim=1)
+
+                # dts, Bs, Cs = torch.split(x_dbl.view(B, K, -1, L), [R, N, N], dim=2)
+                if not Late_flip:
+                    dts, Bs, Cs = torch.split(x_dbl.view(B, K, x_proj_weight_N, L), [R, N, N], dim=2) # R=6, N=1
+
+                    # dts = F.conv1d(dts.contiguous().view(B, -1, L), dt_projs_weight.view(K * D, -1, 1), groups=K)
+                    dts = F.conv1d(dts.contiguous().view(B, K*R, L), dt_projs_weight.view(K * D, R, 1), groups=K)
+
+                else:
+                    dts_up, Bs_up, Cs_up = torch.split(x_dbl_up.view(B, 2, x_proj_weight_N, L), [R, N, N], dim=2) # R=6, N=1
+
+                    dts_down, Bs_down, Cs_down = torch.split(x_dbl_down.view(B, 2, x_proj_weight_N, L), [R, N, N], dim=2) # R=6, N=1
+
+                    dts_up = F.conv1d(dts_up.contiguous().view(B, 2*R, L), dt_projs_weight[0:2, :, :].contiguous().view(2 * D, R, 1), groups=2)
+                    dts_down = F.conv1d(dts_down.contiguous().view(B, 2*R, L), dt_projs_weight[2:4, :, :].contiguous().view(2 * D, R, 1), groups=2)
 
             else:
                 x_dbl = torch.einsum("b k d l, k c d -> b k c l", xs, x_proj_weight)
@@ -1396,7 +1532,12 @@ class SS2Dv2:
             # Cs = Cs.contiguous().view(B, K, N, L)
             # Ds = Ds.to(torch.float) # (K * c)
             # delta_bias = dt_projs_bias.view(-1).to(torch.float)
-                
+
+            if Late_flip:
+                xs = torch.cat((xs_up, xs_down), dim=1) # [B, 4, D, L]
+                dts = torch.cat((dts_up, dts_down), dim=1) # [B, 4*D, L]
+                Bs = torch.cat((Bs_up, Bs_down), dim=1)  
+                Cs = torch.cat((Cs_up, Cs_down), dim=1) 
 
             xs = xs.view(B, K*D, L)
             dts = dts.contiguous().view(B, K*D, L)
@@ -1428,7 +1569,10 @@ class SS2Dv2:
 
             # modify by lihaokun in 20241025 to add onnx node that perform the for loop in selective_scan_ref
             else:
-                ys = selective_scan_ref_batch_end(xs, dts, As, Bs, Cs, Ds, delta_bias, Late_flip = Late_flip).view(B, K, D, H, W)
+                ys_up, ys_down = selective_scan_ref_batch_end(xs, dts, As, Bs, Cs, Ds, delta_bias, Late_flip = Late_flip)
+                
+                ys_up = ys_up.view(B, 2, D, H, W)
+                ys_down = ys_down.view(B, 2, D, H, W)
             
             # y: torch.Tensor = CrossMerge.apply(ys)
 
@@ -1437,7 +1581,7 @@ class SS2Dv2:
                 y: torch.Tensor = CrossMerge_onnx(ys)
             
             else:
-                y: torch.Tensor = CrossMerge_onnx_late_flip(ys)
+                y: torch.Tensor = CrossMerge_onnx_late_flip(ys_up, ys_down)
 
             if getattr(self, "__DEBUG__", False):
                 setattr(self, "__data__", dict(

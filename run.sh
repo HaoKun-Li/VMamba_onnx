@@ -64,12 +64,13 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 1 --convert_to_onnx --onnx_path "model_lhk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0919.onnx" --simplify_onnx_path "model_lhk_simpliy_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_custom_operator_0919.onnx" --simplify_onnx --custom_operator
 
 
+
 # batchsize为16，导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，使用自定义的onnx算子代替SelectiveScan中的for循环过程且把batch维度置后以便于每个lane批量运算
-CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 16 --convert_to_onnx --onnx_path "model_lhk_batchsize16_custom_operator_1025.onnx" --simplify_onnx_path "model_lhk_simpliy_batchsize16_custom_operator_1025.onnx" --simplify_onnx --custom_operator
+CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 16 --convert_to_onnx --onnx_path "model_lhk_batchsize16_custom_operator_1102.onnx" --simplify_onnx_path "model_lhk_simpliy_batchsize16_custom_operator_1102.onnx" --simplify_onnx --custom_operator 2>&1 | tee export_log.txt
 
 
 # batchsize为32，导出onnx模型，使用onnxoptimizer简化vmamba onnx模型，使用自定义的onnx算子代替SelectiveScan中的for循环过程且把batch维度置后以便于每个lane批量运算
-CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 32 --convert_to_onnx --onnx_path "model_lhk_batchsize32_custom_operator_1025.onnx" --simplify_onnx_path "model_lhk_simpliy_batchsize32_custom_operator_1025.onnx" --simplify_onnx --custom_operator
+CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29508 inference_lhk.py --batch-size 32 --convert_to_onnx --onnx_path "model_lhk_batchsize32_custom_operator_1102.onnx" --simplify_onnx_path "model_lhk_simpliy_batchsize32_custom_operator_1102.onnx" --simplify_onnx --custom_operator
 
 
 #### 使用onnxoptimizer简化vmamba onnx模型
@@ -94,9 +95,11 @@ CUDA_VISIBLE_DEVICES=1 python -m torch.distributed.launch --nnodes=1 --node_rank
 CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval
 
 
-CUDA_VISIBLE_DEVICES=4 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --custom_operator
+
+CUDA_VISIBLE_DEVICES=7 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --custom_operator --batch-size 16
 
 
+# 尝试加载github仓库更新后的checkpoint，失败
 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --pretrained /home/test/code/VMamba-main/vssm1_tiny_0230s_ckpt_epoch_264.pth
 
 
@@ -450,3 +453,33 @@ CUDA_VISIBLE_DEVICES=3 python convert_sub_model_to_onnx.py --custom_operator --o
 
 # 读取模型真实推理时的算子输入，比对该算子的pytorch和onnx的计算结果
 CUDA_VISIBLE_DEVICES=3 python convert_sub_model_to_onnx.py 
+
+
+
+
+### test inference speed on SE-BM1684X
+# 172.22.141.209
+# admin
+# admin
+# 数据集：/mnt/datasets/imagenet/val/
+# 使用 pip3 和 python3
+# cd /mnt/algorithm/VMamba-main
+# model_path on device: /mnt/algorithm/VMamba-main/classification/model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_replaceConv1d_0827_v2.onnx
+
+# 原始未经过优化的onnx模型
+# Final Throughput of onnx:0.08355291530693282 image/second
+# Time for one image of onnx:11.968463294506073 second/image
+python3 inference_on_BM1684X.py --batch-size 1 --onnx_path "model_lhk_0611.onnx" --inference_time_onnx
+
+
+# 离散化分块并行的onnx模型
+# Final Throughput of onnx:0.4145635331510161 image/second
+# Time for one image of onnx:2.412175505161287 second/image
+python3 inference_on_BM1684X.py --batch-size 1 --onnx_path "model_lhk_simpliy_chunk_noEinsum_intShape_noInplace_chunkcumsum_batchsize1_replaceConv1d_0827_v2.onnx" --inference_time_onnx
+
+
+
+
+
+# debug 测试准确率
+CUDA_VISIBLE_DEVICES=7 python -m torch.distributed.launch --nnodes=1 --node_rank=0 --nproc_per_node=1 --master_addr="127.0.0.1" --master_port=29501 inference_lhk.py --eval --custom_operator --batch-size 16
