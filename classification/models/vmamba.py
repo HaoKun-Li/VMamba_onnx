@@ -1086,8 +1086,11 @@ class SS2Dv2:
             # # modify by lihaokun  use selective_scan_chunk
             # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge),  # vmambav2_tiny_224
 
+            # # # modify by lihaokun  use selective_scan_chunk
+            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge_onnx, custom_operator=False),
+            
             # # # modify by lihaokun  use selective_scan_chunk and onnx custom_operator
-            v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge_onnx, custom_operator=True),  # vmambav2_tiny_224
+            # v05=partial(self.forward_corev2, force_fp32=False, SelectiveScan=selective_scan_easy, no_einsum=True, CrossScan=CrossScan_onnx, CrossMerge=CrossMerge_onnx, custom_operator=True),  # vmambav2_tiny_224
             
             # use this
             # ===============================
